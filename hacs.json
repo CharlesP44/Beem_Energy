@@ -1,0 +1,9 @@
+{
+  "name": "Beem Energy",
+  "domain": "Beem_Energy",
+  "documentation": "https://github.com/CharlesP44/Beem_Energy",
+  "codeowners": ["@CharlesP44"],
+  "requirements": [],
+  "version": "0.5.0",
+  "type": "integration"
+}
