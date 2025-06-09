@@ -1,0 +1,12 @@
+{
+  "domain": "Beem_Energy",
+  "name": "Beem Energy",
+  "version": "1.0.0",
+  "documentation": "https://github.com/CharlesP44/Beem_Energy",
+  "requirements": [],
+  "dependencies": [],
+  "codeowners": ["@CharlesP44"],
+  "config_flow": true,
+  "iot_class": "cloud_polling",
+  "supported_platforms": ["sensor"]
+}
