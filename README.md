@@ -8,7 +8,7 @@ Intégration **non officielle** permettant de connecter les équipements **Beem 
 > ⚠️ Actuellement, seule la **batterie Beem** est pleinement testée. D'autres équipements sont en cours de validation.
 
 ---
-## ⚙️ Fonctionnalités / ## ✨ Fonctionnalités
+## ✨ Fonctionnalités
 ☀️ Détection et détails des équipements solaires connectés
 
 📊 Récupération automatique des données live toutes les 60 secondes
@@ -23,13 +23,13 @@ Intégration **non officielle** permettant de connecter les équipements **Beem 
 ## 🚧 État actuel
 
 Cette intégration est en cours de développement et nécessite des retours de la communauté, notamment pour :
-- Tester avec d’autres produits Beem (Panneaux PnP, Energy Switch, etc.)
+- Tester avec d’autres produits Beem (Panneaux Plug and Play (PnP), Energy Switch)
 - Remonter les bugs ou comportements inattendus
 - Suggérer des améliorations
 
 ---
 
-## 🛠️ Installation / 🧰 Installation via HACS
+## 🛠️ Installation
 ### 1. Via HACS (recommandé à terme)
 Pas encore disponible via le store HACS officiel.
 
@@ -101,8 +101,22 @@ Merci ! 🙏
 
 
 
+---
 
 
+
+## 📊 Tableau de bord Energy Home Assistant
+
+Les entités suivantes sont créées automatiquement afin d’être intégrées au tableau de bord Énergie natif de Home Assistant :
+
+Meter Power Positive (kWh) , Meter Power Negative (kWh)
+
+Battery Solar Energy (kWh)
+
+Battery Energy Charging (kWh),  Battery Energy Discharging (kWh)
+
+
+![image](https://github.com/user-attachments/assets/0d91bd17-646f-4588-8ade-0af72059f9b6)
 
 ## 📊 Tableau de bord Lovelace (optionnel)
 
@@ -125,7 +139,6 @@ La visualisation utilise la carte personnalisée **Power Flow Card Plus**, dispo
 1. Allez dans **Paramètres > Tableaux de bord > Ajouter un tableau de bord**.
 2. Cliquez sur **Configurer via YAML** (ou utilisez un *dashboard existant*).
 3. Copiez-collez le contenu du fichier [`lovelace_dashboard.yaml`](./lovelace_dashboard.yaml) fourni dans le dépôt.
-4. Ajustez les noms des entités si nécessaire (selon votre configuration Home Assistant).
 
 > 💡 Le tableau de bord a été conçu pour une batterie Beem. Vous pouvez bien sûr l’adapter selon vos besoins.
 
