@@ -37,7 +37,7 @@ Pas encore disponible via le store HACS officiel.
 1. Ouvrez HACS dans Home Assistant
 2. Cliquez sur Intégrations puis sur les 3 points en haut à droite
 3. Sélectionnez Dépôts personnalisés
-4. Entrez : https://github.com/<TON_COMPTE>/<TON_REPO>
+4. Entrez : https://github.com/CharlesP44/Beem_Energy 
    Type : Intégration
 5. Une fois ajouté, recherchez **Beem Energy** dans HACS et installez-le
 6. Redémarrez Home Assistant
@@ -98,7 +98,6 @@ Si vous aimez cette intégration, vous pouvez me soutenir :
 [![Buy Me a Coffee](https://img.shields.io/badge/buymeacoffee-donate-yellow.svg?logo=buymeacoffee)](https://www.buymeacoffee.com/CharlesP44)
 
 Merci ! 🙏
-
 
 
 
