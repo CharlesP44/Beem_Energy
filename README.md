@@ -117,6 +117,9 @@ Battery Energy Charging (kWh),  Battery Energy Discharging (kWh)
 
 
 ![image](https://github.com/user-attachments/assets/0d91bd17-646f-4588-8ade-0af72059f9b6)
+![1362ead01f59ccd8470af4a6ab31617671ad2d5c](https://github.com/user-attachments/assets/43ae8181-2e1c-4128-81c2-9f9bea19fdfd)
+
+
 
 ## 📊 Tableau de bord Lovelace (optionnel)
 
