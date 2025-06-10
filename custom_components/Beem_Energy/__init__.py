@@ -21,13 +21,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN] = {}
 
     email = entry.data.get("email")
-    battery_id = entry.data.get("battery_id")  # Optional
+    battery_id = entry.data.get("battery_id")  # Optional, can be None
 
     if not email:
         _LOGGER.error("L'adresse e-mail est manquante dans l'entrée de configuration.")
         return False
 
-    # Récupération sécurisée du mot de passe
+    # Retrieve password securely from storage
     storage = BeemSecureStorage(hass)
     password = await storage.get_password(email)
 
@@ -37,7 +37,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     token = entry.options.get("token")
 
-    # Création du client API Beem
+    # Create Beem API client
     api_client = BeemApiClient(
         email=email,
         password=password,
@@ -46,7 +46,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry=entry,
     )
 
-    # Tentative de login si aucun token
+    # Attempt login if no token is present
     if not token:
         try:
             login_ok = await api_client.login()
@@ -61,11 +61,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         token = api_client.token
         _LOGGER.info("Token obtenu avec succès depuis l'API.")
 
-    # Création du coordinateur (gestion centralisée des données)
+    # Create and refresh coordinator
     coordinator = BeemCoordinator(
         hass=hass,
         api=api_client,
-        battery_id=battery_id,  # None si PnP seulement
+        battery_id=battery_id,
     )
 
     try:
