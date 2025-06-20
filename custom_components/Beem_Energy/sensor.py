@@ -259,7 +259,7 @@ class BeemEnergySensor(SensorEntity):
         if state is None or state.state in (None, "unknown", "unavailable"):
             return
         try:
-            power_watts = float(state.state)
+            power_watts = abs(float(state.state))
         except (ValueError, TypeError):
             return
         now = self.hass.helpers.event.dt_util.utcnow()
