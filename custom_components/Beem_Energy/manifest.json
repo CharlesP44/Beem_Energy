@@ -3,6 +3,7 @@
   "name": "Beem Energy",
   "version": "1.0.0",
   "documentation": "https://github.com/CharlesP44/Beem_Energy",
+  "issue_tracker": "https://github.com/CharlesP44/Beem_Energy/issues",
   "requirements": [],
   "dependencies": [],
   "codeowners": ["@CharlesP44"],
