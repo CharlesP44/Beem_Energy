@@ -1,4 +1,4 @@
-name: "HACS validation"
+name: "HACS Validation"
 
 on:
   push:
@@ -16,3 +16,5 @@ jobs:
 
       - name: HACS validation
         uses: hacs/action@main
+        with:
+          category: integration
