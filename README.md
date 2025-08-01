@@ -11,7 +11,7 @@ Intégration **non officielle** permettant de connecter les équipements **Beem 
 ## ✨ Fonctionnalités
 ☀️ Détection et détails des équipements solaires connectés
 
-📊 Récupération automatique des données live toutes les 60 secondes
+📊 Récupération automatique des données live pour la batterie, toutes les 60 secondes pour le reste des équipements.
 
 🔋 Affichage de la capacité, charge, production, consommation
 
@@ -109,11 +109,9 @@ Merci ! 🙏
 
 Les entités suivantes sont créées automatiquement afin d’être intégrées au tableau de bord Énergie natif de Home Assistant :
 
-Meter Power Positive (kWh) , Meter Power Negative (kWh)
-
-Battery Solar Energy (kWh)
-
-Battery Energy Charging (kWh),  Battery Energy Discharging (kWh)
+⚡sensor.batterie_beem_<idbatterie>_meterpower_consumption_kwh / ⚡︎ sensor.batterie_beem_<idbatterie>_meterpower_injection_kwh
+☀️ sensor.batterie_beem_<idbatterie>_solarpower_production_kwh
+🔋sensor.batterie_beem_<idbatterie>_batterypower_charging_kwh / 🪫sensor.batterie_beem_<idbatterie>_batterypower_discharging_kwh
 
 
 ![image](https://github.com/user-attachments/assets/0d91bd17-646f-4588-8ade-0af72059f9b6)
