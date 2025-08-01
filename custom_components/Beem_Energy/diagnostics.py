@@ -1,3 +1,5 @@
+# Copyright (c) 2025 CharlesP44 
+# SPDX-License-Identifier: MIT
 import logging
 from typing import Any, Dict
 
