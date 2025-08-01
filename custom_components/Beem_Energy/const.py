@@ -1,3 +1,5 @@
+# Copyright (c) 2025 CharlesP44 
+# SPDX-License-Identifier: MIT
 # Domaine d'intégration Home Assistant
 DOMAIN = "beem_energy"
 
