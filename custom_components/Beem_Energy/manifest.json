@@ -1,11 +1,10 @@
 {
   "domain": "beem_energy",
   "name": "Beem Energy",
-  "version": "1.0.0",
+  "version": "2025.08.01",
   "documentation": "https://github.com/CharlesP44/Beem_Energy",
   "issue_tracker": "https://github.com/CharlesP44/Beem_Energy/issues",
-  "requirements": [],
-  "dependencies": [],
+  "requirements": ["aiomqtt>=1.1.0"],
   "codeowners": ["@CharlesP44"],
   "config_flow": true,
   "iot_class": "cloud_polling",
