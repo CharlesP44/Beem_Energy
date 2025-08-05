@@ -13,6 +13,10 @@ from aiomqtt import Client, ProtocolVersion
 from .const import DOMAIN, PLATFORMS
 from .beem_api import get_tokens, get_devices
 from .coordinator import get_beem_coordinator
+from homeassistant.helpers import config_validation as cv
+
+CONFIG_SCHEMA = cv.empty_config_schema("beem_energy")
+
 
 _LOGGER = logging.getLogger(__name__)
 
