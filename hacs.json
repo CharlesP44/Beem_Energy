@@ -4,5 +4,4 @@
   "homeassistant": "2024.4.0",
   "render_readme": true,
   "domain": "beem_energy",
-  "category": "integration"
 }
