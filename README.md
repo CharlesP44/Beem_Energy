@@ -148,3 +148,4 @@ La visualisation utilise la carte personnalisée **Power Flow Card Plus**, dispo
 ### Aperçu
 
 ![aperçu lovelace](./screenshots/lovelace_preview.png)
+
