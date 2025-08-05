@@ -4,6 +4,8 @@ Intégration **non officielle** permettant de connecter les équipements **Beem 
 
 [![Buy Me a Coffee](https://img.shields.io/badge/buymeacoffee-donate-yellow.svg?logo=buymeacoffee)](https://www.buymeacoffee.com/CharlesP44)
 
+[![HACS Validation](https://github.com/CharlesP44/Beem_Energy/actions/workflows/hacs.yaml/badge.svg)](https://github.com/CharlesP44/Beem_Energy/actions/workflows/hacs.yaml)
+
 
 > ⚠️ Actuellement, seule la **batterie Beem** est pleinement testée. D'autres équipements sont en cours de validation.
 
