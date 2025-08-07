@@ -2,5 +2,6 @@
   "name": "Beem_Energy",
   "content_in_root": false,
   "homeassistant": "2024.4.0",
-  "render_readme": true
+  "render_readme": true,
+  "country": "FR"
 }
