@@ -22,7 +22,6 @@ async def async_get_config_entry_diagnostics(
     energyswitch_topic = data.get("energyswitch_topic")
     mqtt_task = data.get("mqtt_task")
 
-    # ---- Batteries et MQTT ----
     diagnostics = {
         "entry_info": {
             "entry_id": entry.entry_id,
@@ -50,7 +49,6 @@ async def async_get_config_entry_diagnostics(
         "errors": [],
     }
 
-    # ---- Data brute du coordinator ----
     if hasattr(coordinator, "data"):
         last_data = coordinator.data or {}
         diagnostics["rest_status"]["last_data_brief"] = {
@@ -59,7 +57,6 @@ async def async_get_config_entry_diagnostics(
             if not isinstance(v, (list, dict))
         }
 
-        # -- Batteries by serial
         batteries_by_serial = last_data.get("batteries_by_serial", {})
         for serial, battery in batteries_by_serial.items():
             dev_info = {
@@ -69,15 +66,11 @@ async def async_get_config_entry_diagnostics(
                 "rest_lastKnownMeasureDate": battery.get("lastKnownMeasureDate"),
                 "fields": {k: battery.get(k) for k in battery.keys()},
             }
-            # MQTT Buffer: tentative de retrouver le buffer
             mqtt_buffers = getattr(hass.data[DOMAIN][entry.entry_id], "mqtt_buffers", {})
             buffer_diag = {}
-            # Si tu stockes le buffer par ailleurs, adapte ici
-            # buffer_diag = ... 
             dev_info["mqtt_buffer"] = buffer_diag
             diagnostics["devices"][serial] = dev_info
 
-        # -- Solar Equipments
         if "solar_equipments" in last_data:
             for idx, eq in enumerate(last_data["solar_equipments"]):
                 diagnostics["solar_equipments"].append(
@@ -91,7 +84,6 @@ async def async_get_config_entry_diagnostics(
                     }
                 )
 
-        # -- BeemBox
         if "beemboxes" in last_data:
             for box in last_data["beemboxes"]:
                 diagnostics["beemboxes"].append(
@@ -104,8 +96,6 @@ async def async_get_config_entry_diagnostics(
                     }
                 )
 
-    # ---- Sensors créés (optionnel : nécessite d’être exposé depuis sensor.py, sinon à ignorer) ----
-    # Pour exposer la liste : dans sensor.py, ajoute `hass.data[DOMAIN][entry.entry_id]["active_sensors"] = all_entities`
     sensors = data.get("active_sensors")
     if sensors:
         for ent in sensors:
@@ -122,13 +112,10 @@ async def async_get_config_entry_diagnostics(
                 }
             )
 
-    # ---- Erreurs et stats MQTT ----
-    # Ex : hass.data[DOMAIN][entry.entry_id]["errors"] = []
     errors = data.get("errors")
     if errors:
         diagnostics["errors"].extend(errors)
 
-    # ---- Statut général ----
     diagnostics["integration_status"] = "OK"
     if mqtt_task and mqtt_task.done():
         diagnostics["integration_status"] = "MQTT stopped or error"
