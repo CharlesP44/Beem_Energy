@@ -1,6 +1,7 @@
 {
   "domain": "beem_energy",
   "name": "Beem Energy",
+  "dependencies": ["mqtt"],
   "codeowners": ["@CharlesP44"],
   "config_flow": true,
   "documentation": "https://github.com/CharlesP44/Beem_Energy",
