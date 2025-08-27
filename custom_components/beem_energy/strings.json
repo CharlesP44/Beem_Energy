@@ -1,0 +1,50 @@
+{
+  "title": "Beem Energy",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configurer Beem Energy",
+        "description": "Connectez votre compte Beem Energy.",
+        "data": {
+          "email": "Email",
+          "password": "Mot de passe"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Identifiants invalides",
+      "cannot_connect": "Connexion impossible avec les serveurs Beem",
+      "unknown": "Erreur inattendue"
+    },
+    "abort": {
+      "already_configured": "Ce compte est déjà configuré"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options Beem Energy",
+        "data": {
+          "freshness_window": "Fenêtre de fraîcheur MQTT (secondes)",
+          "rest_poll_interval": "Intervalle de rafraîchissement des données (secondes)",
+          "enable_internal_energy": "Activer les capteurs kWh internes (expérimental)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "charging": { "name": "Puissance de charge" },
+      "discharging": { "name": "Puissance de décharge" },
+      "production": { "name": "Production solaire" },
+      "consumption": { "name": "Prélèvement réseau" },
+      "injection": { "name": "Injection réseau" },
+      "charging_kwh": { "name": "Énergie de charge" },
+      "discharging_kwh": { "name": "Énergie de décharge" },
+      "production_kwh": { "name": "Énergie solaire" },
+      "consumption_kwh": { "name": "Énergie prélevée au réseau" },
+      "injection_kwh": { "name": "Énergie injectée" },
+      "mqtt_last_update": { "name": "Dernière mise à jour MQTT" }
+    }
+  }
+}
