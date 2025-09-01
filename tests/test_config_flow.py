@@ -1,42 +1,48 @@
 import pytest
 from unittest.mock import patch, AsyncMock
 
+from homeassistant.config_entries import SOURCE_USER
+from homeassistant.core import HomeAssistant
+
 from custom_components.beem_energy.const import DOMAIN
+from custom_components.beem_energy.exceptions import BeemAuthError, BeemConnectionError
 
 @pytest.mark.asyncio
-async def test_config_flow_success(hass):
+async def test_config_flow_success(hass: HomeAssistant):
     """Test d'un flow de config Beem réussi."""
-    # Patch try_login pour retourner un user_id et un token fictif
     with patch(
-        "custom_components.beem_energy.beem_api.try_login",
-        new=AsyncMock(return_value={"access_token": "token", "user_id": "123"}),
+        "custom_components.beem_energy.config_flow.try_login",
+        return_value={"access_token": "fake_token", "user_id": "123"},
     ):
         result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
+            DOMAIN, context={"source": SOURCE_USER}
         )
         assert result["type"] == "form"
+        assert result["step_id"] == "user"
 
-        result = await hass.config_entries.flow.async_configure(
+        result2 = await hass.config_entries.flow.async_configure(
             result["flow_id"],
             user_input={"email": "test@beem.fr", "password": "ok"},
         )
-        assert result["type"] == "create_entry"
-        assert result["data"]["email"] == "test@beem.fr"
-        assert result["title"].startswith("Beem Energy")
+        await hass.async_block_till_done()
+
+        assert result2["type"] == "create_entry"
+        assert result2["title"] == "Beem Energy (test@beem.fr)"
+        assert result2["data"] == {"email": "test@beem.fr", "password": "ok"}
 
 @pytest.mark.asyncio
-async def test_config_flow_auth_error(hass):
-    """Test une erreur d'auth lors du flow."""
+async def test_config_flow_auth_error(hass: HomeAssistant):
+    """Test une erreur d'authentification lors du flow."""
     with patch(
-        "custom_components.beem_energy.beem_api.try_login",
-        new=AsyncMock(side_effect=Exception("Identifiants invalides")),
+        "custom_components.beem_energy.config_flow.try_login",
+        side_effect=BeemAuthError,
     ):
         result = await hass.config_entries.flow.async_init(
-            DOMAIN, context={"source": "user"}
+            DOMAIN, context={"source": SOURCE_USER}
         )
-        result = await hass.config_entries.flow.async_configure(
+        result2 = await hass.config_entries.flow.async_configure(
             result["flow_id"],
             user_input={"email": "fail@beem.fr", "password": "bad"},
         )
-        assert result["type"] == "form"
-        assert result["errors"]["base"] in ["invalid_auth", "unknown"]
+        assert result2["type"] == "form"
+        assert result2["errors"]["base"] == "invalid_auth"
