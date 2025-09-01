@@ -1,48 +1,26 @@
+from unittest.mock import patch, AsyncMock
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
 
-from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.const import ConfigEntryState
 
-from custom_components.beem_energy.const import DOMAIN
+from custom_components.beem_energy.exceptions import BeemConnectionError
 
-# Créez une fausse entrée de config réutilisable
-from tests.common import MockConfigEntry
+async def test_setup_and_unload_entry(hass: HomeAssistant, setup_integration):
+    """Test le chargement et le déchargement de l'intégration."""
+    entry = setup_integration
+    assert entry.state is ConfigEntryState.LOADED
 
-@pytest.mark.asyncio
-async def test_async_setup_entry(hass: HomeAssistant):
-    """Test le setup complet de l'intégration."""
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={"email": "test@beem.fr", "password": "ok"},
-        unique_id="beem_123"
-    )
-    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.NOT_LOADED
 
-    # Mock réaliste pour get_devices
-    mock_devices_payload = {
-        "batteries": [{"serialNumber": "BEE123", "id": 42}],
-        "energySwitches": [{"serialNumber": "SWITCH123"}]
-    }
-
+async def test_setup_fails_on_connection_error(hass: HomeAssistant, mock_config_entry):
+    """Test que le setup passe en mode 'retry' si l'API est injoignable."""
+    mock_config_entry.add_to_hass(hass)
     with patch(
-        "custom_components.beem_energy.get_tokens",
-        new=AsyncMock(return_value={
-            "access_token": "token", "user_id": "123", "client_id": "client",
-            "mqtt_token": "mqtt", "mqtt_server": "server", "mqtt_port": 8883,
-        }),
-    ), patch(
-        "custom_components.beem_energy.get_devices",
-        new=AsyncMock(return_value=mock_devices_payload),
-    ), patch(
-        "custom_components.beem_energy.Client", new_callable=AsyncMock
+        "custom_components.beem_energy.get_tokens", side_effect=BeemConnectionError
     ):
-        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
-
-        # Vérifie que l'entrée est bien chargée et non en erreur
-        assert entry.state is ConfigEntryState.LOADED
-        # Vérifie que les données sont bien stockées
-        assert DOMAIN in hass.data
-        assert entry.entry_id in hass.data[DOMAIN]
-        assert hass.data[DOMAIN][entry.entry_id]["user_id"] == "123"
+        assert mock_config_entry.state is ConfigEntryState.SETUP_RETRY
