@@ -8,5 +8,5 @@
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/CharlesP44/Beem_Energy/issues",
   "requirements": ["aiomqtt>=1.1.0"],
-  "version": "2025.08.27"
+  "version": "2025.09.04"
 }
