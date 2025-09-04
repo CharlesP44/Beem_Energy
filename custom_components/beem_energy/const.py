@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 DOMAIN = "beem_energy"
 
-PLATFORMS = ["sensor"]
+PLATFORMS = ["sensor", "select", "switch", "number"]
 
 # === API Beem ===
 BASE_URL = "https://api-x.beem.energy/beemapp"
