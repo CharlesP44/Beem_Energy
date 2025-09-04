@@ -17,7 +17,7 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-BEEM_429_DELAY = 20 * 60
+BEEM_429_DELAY = 20 * 60  # 20 min en secondes
 BEEM_429_MEMKEY = "beem_429_lock_ts"
 BEEM_429_LAST_NOTIF = "beem_429_last_notif_ts"
 
@@ -41,13 +41,11 @@ def _beem429_locked(hass, email: str) -> bool:
         return False
     return (time.time() - ts) < BEEM_429_DELAY
 
-
 def _beem429_next_try(hass, email: str) -> float | None:
     ts = hass.data.get(BEEM_429_MEMKEY, {}).get(email)
     if ts is None:
         return None
     return ts + BEEM_429_DELAY
-
 
 async def _notify_rate_limit(hass, title: str, message: str) -> None:
     """Crée une notification persistante (dédupliquée ~5 min)."""
@@ -98,7 +96,6 @@ async def try_login(email: str, password: str) -> dict:
                 return {"access_token": token_rest, "user_id": user_id}
     except aiohttp.ClientError as e:
         raise BeemConnectionError("Erreur réseau Beem") from e
-
 
 async def get_tokens(hass, config_entry: ConfigEntry, email: str, password: str) -> dict:
     """Récupère/rafraîchit les tokens REST & MQTT avec anti-429 par utilisateur."""
@@ -202,7 +199,6 @@ async def _refresh_rest_token(hass, email: str, password: str) -> tuple[str, str
     except aiohttp.ClientError as e:
         raise BeemConnectionError("Erreur réseau Beem") from e
 
-
 async def _refresh_mqtt_token(token_rest: str, client_id: str) -> tuple[str, float]:
     """Demande un token MQTT (JWT) avec le token REST. Retourne (token, expires_at)."""
     mqtt_url = f"{BASE_URL}/devices/mqtt/token"
@@ -250,7 +246,7 @@ async def get_box_summary(token_rest: str) -> list:
                         "Erreur récupération BeemBox summary (%s) : %s",
                         resp.status, await resp.text()
                     )
-                    return [] # Retourne une liste vide en cas d'erreur
+                    return []
                 return await resp.json()
     except aiohttp.ClientError as e:
         _LOGGER.error("Erreur réseau Beem (Box Summary): %s", e)
@@ -352,3 +348,45 @@ async def get_battery_live_data(token_rest: str, battery_id: int) -> dict:
                 return await resp.json()
     except Exception:
         return {}
+
+async def get_battery_control_parameters(token_rest: str, battery_id: int) -> dict:
+    """Récupère les paramètres de contrôle actuels de la batterie (mode, etc.)."""
+    url = f"{BASE_URL}/batteries/{battery_id}/control-parameters"
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            headers = {"Authorization": f"Bearer {token_rest}", "Accept": "application/json"}
+            async with session.get(url, headers=headers) as resp:
+                if resp.status == 401:
+                    raise BeemAuthError("Token expiré ou invalide (get_control_parameters)")
+                if resp.status not in (200, 201):
+                    _LOGGER.warning("Impossible de récupérer les paramètres de contrôle pour la batterie %s (status: %s)", battery_id, resp.status)
+                    return {}
+                return await resp.json()
+    except aiohttp.ClientError:
+        _LOGGER.warning("Erreur réseau Beem (get_control_parameters) pour la batterie %s", battery_id)
+        return {}
+
+async def set_battery_control_parameters(token_rest: str, battery_id: int, params: dict) -> bool:
+    """Modifie un ou plusieurs paramètres de contrôle de la batterie."""
+    url = f"{BASE_URL}/batteries/{battery_id}/control-parameters"
+    
+    _LOGGER.debug("Modification des paramètres de la batterie %s -> %s", battery_id, params)
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            headers = {
+                "Authorization": f"Bearer {token_rest}",
+                "Content-Type": "application/json; charset=UTF-8",
+                "Accept": "application/json",
+            }
+            async with session.patch(url, json=params, headers=headers) as resp:
+                text = await resp.text()
+                if resp.status not in (200, 201, 204):
+                    _LOGGER.error("Erreur Beem modification des paramètres (%s) : %s", resp.status, text)
+                    raise Exception(f"Erreur Beem : {text}")
+                
+                _LOGGER.info("Paramètres de la batterie %s modifiés avec succès : %s", battery_id, params)
+                return True
+    except aiohttp.ClientError as e:
+        raise BeemConnectionError(f"Erreur réseau Beem (set_parameters): {e}") from e
