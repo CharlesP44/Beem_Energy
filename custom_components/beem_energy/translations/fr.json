@@ -1,0 +1,33 @@
+{
+  "entity": {
+    "select": {
+      "battery_mode": {
+        "name": "Mode de la batterie",
+        "state": {
+          "auto": "Automatique",
+          "pause": "Pause",
+          "advanced": "Avancé"
+        }
+      },
+      "charge_power": {
+        "name": "Puissance de charge maximale"
+      }
+    },
+    "switch": {
+      "allow_charge_from_grid": {
+        "name": "Autoriser la charge depuis le réseau"
+      },
+      "prevent_discharge": {
+        "name": "Bloquer la décharge de la batterie"
+      }
+    },
+    "number": {
+      "min_soc": {
+        "name": "Niveau de charge minimum"
+      },
+      "max_soc": {
+        "name": "Limite de charge"
+      }
+    }
+  }
+}

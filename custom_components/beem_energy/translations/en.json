@@ -1,0 +1,33 @@
+{
+  "entity": {
+    "select": {
+      "battery_mode": {
+        "name": "Battery Mode",
+        "state": {
+          "auto": "Auto",
+          "pause": "Pause",
+          "advanced": "Advanced"
+        }
+      },
+      "charge_power": {
+        "name": "Maximum Charge Power"
+      }
+    },
+    "switch": {
+      "allow_charge_from_grid": {
+        "name": "Allow Charge From Grid"
+      },
+      "prevent_discharge": {
+        "name": "Block Battery Discharge"
+      }
+    },
+    "number": {
+      "min_soc": {
+        "name": "Minimum Charge Level"
+      },
+      "max_soc": {
+        "name": "Charge Limit"
+      }
+    }
+  }
+}
