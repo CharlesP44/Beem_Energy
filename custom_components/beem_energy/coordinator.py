@@ -14,7 +14,8 @@ from .beem_api import get_devices, get_tokens, get_battery_live_data
 from .exceptions import BeemAuthError, BeemConnectionError
 from .utils.merge import merge_live_into_battery
 from datetime import datetime, timezone
-from .beem_api import get_devices, get_tokens, get_battery_live_data, get_box_summary
+from .beem_api import get_devices, get_tokens, get_battery_live_data, get_box_summary, get_battery_control_parameters
+
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -116,9 +117,13 @@ class BeemCoordinator(DataUpdateCoordinator):
                         bat_data = dict(bat)
                         battery_id = bat.get("id")
                         if battery_id:
-                            live_raw = await get_battery_live_data(token, battery_id)
+                            live_raw, control_params = await asyncio.gather(
+                                get_battery_live_data(token, battery_id),
+                                get_battery_control_parameters(token, battery_id)
+                            )
                             if live_raw:
                                 bat_data = merge_live_into_battery(bat_data, live_raw)
+                            bat_data['control_parameters'] = control_params
 
                         self.batteries_by_serial[serial] = bat_data
                         if main_battery_serial is None:
@@ -208,7 +213,6 @@ class BeemCoordinator(DataUpdateCoordinator):
         async with aiohttp.ClientSession(headers=headers) as session:
             for battery_id in sorted(all_battery_ids):
                 try:
-                    # Appel GET sur /live-data
                     live_data_url = f"{BASE_URL}/batteries/{battery_id}/live-data"
                     async with session.get(live_data_url) as resp:
                         _LOGGER.debug(
@@ -218,7 +222,6 @@ class BeemCoordinator(DataUpdateCoordinator):
                         )
                         await resp.text()
 
-                    # Appel POST sur /data-stream
                     data_stream_url = f"{BASE_URL}/batteries/{battery_id}/data-stream"
                     params = {"clientId": client_id}
                     async with session.post(data_stream_url, params=params) as resp:
