@@ -283,23 +283,11 @@ async def async_setup_entry(
     hass.data[DOMAIN][entry.entry_id].setdefault("brain_state", {})
     hass.data[DOMAIN][entry.entry_id].setdefault("mqtt_unsubs", [])
     hass.data[DOMAIN][entry.entry_id].setdefault("ha_mqtt_subscribed", set())
+    hass.data[DOMAIN][entry.entry_id]["cloud_mqtt_connected"] = False
 
     avail_window = int(entry.options.get("freshness_window", 120))
-    enable_live_mqtt = True
 
     mqtt_client = hass.data[DOMAIN][entry.entry_id].get("mqtt_client")
-    try:
-        _LOGGER.info(
-            "[MQTT][battery] Cloud mqtt_client=%r type=%s has(unfiltered_messages)=%s has(messages)=%s messages_callable=%s",
-            mqtt_client,
-            type(mqtt_client).__name__ if mqtt_client else None,
-            hasattr(mqtt_client, "unfiltered_messages"),
-            hasattr(mqtt_client, "messages"),
-            callable(getattr(mqtt_client, "messages", None)),
-        )
-    except Exception:
-        pass
-
     batteries = hass.data[DOMAIN][entry.entry_id].get("batteries", [])
     coordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")
 
@@ -335,152 +323,85 @@ async def async_setup_entry(
 
     for battery in batteries:
         serial = _serial_for_uid(battery.get("serialNumber"))
-        if not serial:
-            continue
-
+        if not serial: continue
         mqtt_buffers[serial] = MqttBatteryBuffer(availability_window=avail_window)
         rest_battery = rest_batteries.get(serial, {})
-
         for logical_key, meta in SENSOR_DEFINITIONS.items():
-            if not isinstance(meta, (tuple, list)) or len(meta) < 2:
-                _LOGGER.debug("Skip SENSOR_DEFINITIONS[%s]=%r (invalid)", logical_key, meta)
-                continue
+            if not isinstance(meta, (tuple, list)) or len(meta) < 2: continue
             unit, icon = meta[0], meta[1]
             is_mqtt = _is_mqtt_only_key(logical_key)
-            all_entities.append(
-                BeemMqttOrRestSensor(
-                    serial=serial,
-                    logical_key=logical_key,
-                    unit=unit,
-                    icon=icon,
-                    mqtt_buffer=mqtt_buffers[serial],
-                    rest_battery=rest_battery,
-                    prefer_mqtt=is_mqtt,
-                )
-            )
-
+            all_entities.append(BeemMqttOrRestSensor(serial=serial, logical_key=logical_key, unit=unit, icon=icon, mqtt_buffer=mqtt_buffers[serial], rest_battery=rest_battery, prefer_mqtt=is_mqtt))
         all_entities.append(BeemDerivedSensor(serial, "batteryPower", "charging", mqtt_buffers[serial], rest_battery))
         all_entities.append(BeemDerivedSensor(serial, "batteryPower", "discharging", mqtt_buffers[serial], rest_battery))
         all_entities.append(BeemDerivedSensor(serial, "solarPower", "production", mqtt_buffers[serial], rest_battery))
         all_entities.append(BeemDerivedSensor(serial, "meterPower", "consumption", mqtt_buffers[serial], rest_battery))
         all_entities.append(BeemDerivedSensor(serial, "meterPower", "injection", mqtt_buffers[serial], rest_battery))
-
         all_entities.append(BeemEnergySensor(hass, serial, "batteryPower", "charging"))
         all_entities.append(BeemEnergySensor(hass, serial, "batteryPower", "discharging"))
         all_entities.append(BeemEnergySensor(hass, serial, "solarPower", "production"))
         all_entities.append(BeemEnergySensor(hass, serial, "meterPower", "consumption"))
         all_entities.append(BeemEnergySensor(hass, serial, "meterPower", "injection"))
-
         all_entities.append(BeemMqttLastUpdateSensor(serial, mqtt_buffers[serial]))
-
         all_entities.append(BeemMqttDebugSensor(serial, mqtt_buffers[serial]))
-
     solar_equipments = []
     main_battery_serial = None
     if coordinator and hasattr(coordinator, "data"):
         solar_equipments = coordinator.data.get("battery", {}).get("solarEquipments", [])
         main_battery_serial = _serial_for_uid(coordinator.data.get("main_battery_serial"))
-    if not main_battery_serial:
-        main_battery_serial = "unknown"
-
+    if not main_battery_serial: main_battery_serial = "unknown"
     for idx, equipment in enumerate(solar_equipments):
         equipment_id = str(equipment.get("mpptId", f"{idx+1}"))
         for key, (unit, icon) in SOLAR_EQUIPMENT_SENSORS.items():
             if key in equipment:
-                all_entities.append(
-                    SolarEquipmentSensor(
-                        coordinator, equipment_id, key, unit, idx, icon, main_battery_serial
-                    )
-                )
-
+                all_entities.append(SolarEquipmentSensor(coordinator, equipment_id, key, unit, idx, icon, main_battery_serial))
     if coordinator and hasattr(coordinator, "data"):
         for box_id in coordinator.data.get("beemboxes_by_id", {}).keys():
             for sensor_type in BeemBoxSensor.SENSOR_TYPES.keys():
                 all_entities.append(BeemBoxSensor(coordinator, box_id, sensor_type))
-
     created_es_uids: set[str] = set()
     for es_serial in sorted({s for s in energy_switch_serials if s}):
         es_serial = _serial_for_uid(es_serial)
         mqtt_buffers_es[es_serial] = MqttBatteryBuffer(availability_window=avail_window)
-        
         for chan in [0, 1]:
             for logical_key, meta in ENERGYSWITCH_SENSORS.items():
-                unit = meta.get("unit")
-                icon = meta.get("icon", "mdi:flash")
+                unit, icon = meta.get("unit"), meta.get("icon", "mdi:flash")
                 friendly = f"Ch {chan} {meta.get('friendly_name', logical_key.replace('_', ' ').title())}"
-                
                 uid = f"beem_es_{es_serial}_ch{chan}_{_clean_key(es_serial, logical_key)}"
-                
-                if uid in created_es_uids:
-                    _LOGGER.debug("🔁 Duplicate ES unique_id=%s for key=%s → skip", uid, logical_key)
-                    continue
+                if uid in created_es_uids: continue
                 created_es_uids.add(uid)
-
-                all_entities.append(
-                    BeemEnergySwitchSensor(
-                        serial=es_serial,
-                        channel=chan,
-                        logical_key=logical_key,
-                        unit=unit,
-                        icon=icon,
-                        friendly_name=friendly,
-                        mqtt_buffer=mqtt_buffers_es[es_serial],
-                        precision=meta.get("precision"),
-                        device_class=meta.get("device_class"),
-                        state_class=meta.get("state_class"),
-                    )
-                )
-
+                all_entities.append(BeemEnergySwitchSensor(serial=es_serial, channel=chan, logical_key=logical_key, unit=unit, icon=icon, friendly_name=friendly, mqtt_buffer=mqtt_buffers_es[es_serial], precision=meta.get("precision"), device_class=meta.get("device_class"), state_class=meta.get("state_class")))
     deduped_entities: list[SensorEntity] = []
     seen_uids: set[str] = set()
     for ent in all_entities:
         uid = getattr(ent, "_attr_unique_id", None)
         if not uid or uid not in seen_uids:
-            if uid:
-                seen_uids.add(uid)
+            if uid: seen_uids.add(uid)
             deduped_entities.append(ent)
-        else:
-            _LOGGER.debug("🔁 Duplicate unique_id=%s → entity '%s' ignorée", uid, getattr(ent, "_attr_name", ent))
-
+    
     async_add_entities(deduped_entities)
     _LOGGER.info("🟢 Entités Beem Energy ajoutées (%d, après déduplication) pour entry %s", len(deduped_entities), entry.entry_id)
 
     def _resolve_energy_switch_serials() -> set[str]:
-        """Collecte tous les numéros (minuscule interne), retourne l'ensemble **MAJUSCULE** pour Cloud."""
-        if not hass.data.get(DOMAIN, {}).get(entry.entry_id):
-            _LOGGER.debug("Résolution des serials ES ignorée : l'entrée a été déchargée.")
-            return set()
-
+        if not hass.data.get(DOMAIN, {}).get(entry.entry_id): return set()
         serials_raw = set()
-
         def _add(v):
-            if isinstance(v, str) and v.strip():
-                serials_raw.add(_serial_for_uid(v))
-
+            if isinstance(v, str) and v.strip(): serials_raw.add(_serial_for_uid(v))
         for key in ("energyswitch", "energyswitch_serial", "energy_switch_serial", "energyswitch_serials", "brain_serial"):
             val = hass.data[DOMAIN][entry.entry_id].get(key)
             if isinstance(val, (list, tuple, set)):
-                for s in val:
-                    _add(s)
-            else:
-                _add(val)
-
+                for s in val: _add(s)
+            else: _add(val)
         for src in (entry.data, entry.options):
             for key in ("energyswitch", "energyswitch_serial", "energy_switch_serial", "energyswitch_serials", "brain_serial"):
                 val = src.get(key)
                 if isinstance(val, (list, tuple, set)):
-                    for s in val:
-                        _add(s)
-                else:
-                    _add(val)
-
+                    for s in val: _add(s)
+                else: _add(val)
         try:
             coordinator_local = hass.data[DOMAIN][entry.entry_id].get("coordinator")
             if coordinator_local and hasattr(coordinator_local, "data"):
                 _add(coordinator_local.data.get("energyswitch_serial") or coordinator_local.data.get("energy_switch_serial"))
-        except Exception:
-            pass
-
+        except Exception: pass
         return { _serial_for_topic(s) for s in serials_raw if s }
 
     def _get_es_buf(es_serial: str) -> MqttBatteryBuffer:
@@ -494,8 +415,7 @@ async def async_setup_entry(
     _echo_seen_q: list[str] = []
     _echo_seen_set: set[str] = set()
     def _echo_seen(key: str) -> bool:
-        if key in _echo_seen_set:
-            return True
+        if key in _echo_seen_set: return True
         _echo_seen_set.add(key)
         _echo_seen_q.append(key)
         if len(_echo_seen_q) > 256:
@@ -504,7 +424,6 @@ async def async_setup_entry(
         return False
 
     def _es_put(es_serial: str, chan: int, key: str, value: Any):
-        """Normalise la clé, applique précision, push dans le buffer avec le canal."""
         try:
             canon = _ES_ALIAS_MAP.get(str(key).lower().replace("-", "_").replace(" ", "_").strip("_"), key)
             meta = ENERGYSWITCH_SENSORS.get(canon, {})
@@ -514,230 +433,114 @@ async def async_setup_entry(
             buf = _get_es_buf(es_serial)
             buffer_key = f"ch{chan}_{canon}"
             buf.update(buffer_key, value)
-        except Exception as e:
-            _LOGGER.debug("[MQTT][brain] es_put ignore key=%s err=%s", key, e)
-
+        except Exception as e: _LOGGER.debug("[MQTT][brain] es_put ignore key=%s err=%s", key, e)
     def _publish_metrics(es_serial: str, chan: int, metrics: Dict[str, Any]):
-        """Mappe des métriques EM1/EM1Data sur nos capteurs canoniques."""
-        map_inst = {
-            "act_power": "power",
-            "aprt_power": "apparent_power",
-            "avg_voltage": "voltage",
-            "avg_current": "current",
-            "frequency": "freq",
-            "powerfactor": "pf",
-            "pf": "pf",
-            "voltage": "voltage",
-            "current": "current",
-            "freq": "freq",
-        }
-        map_cum = {
-            "total_act_energy": "energy_active_total",
-            "total_act_ret_energy": "energy_active_returned_total",
-            "lag_react_energy": "energy_reactive_lag",
-            "lead_react_energy": "energy_reactive_lead",
-            "max_act_power": "act_power_max",
-            "min_act_power": "act_power_min",
-            "max_aprt_power": "apparent_power_max",
-            "min_aprt_power": "apparent_power_min",
-            "max_voltage": "voltage_max",
-            "min_voltage": "voltage_min",
-        }
+        map_inst = {"act_power": "power", "aprt_power": "apparent_power", "avg_voltage": "voltage", "avg_current": "current", "frequency": "freq", "powerfactor": "pf", "pf": "pf", "voltage": "voltage", "current": "current", "freq": "freq"}
+        map_cum = {"total_act_energy": "energy_active_total", "total_act_ret_energy": "energy_active_returned_total", "lag_react_energy": "energy_reactive_lag", "lead_react_energy": "energy_reactive_lead", "max_act_power": "act_power_max", "min_act_power": "act_power_min", "max_aprt_power": "apparent_power_max", "min_aprt_power": "apparent_power_min", "max_voltage": "voltage_max", "min_voltage": "voltage_min"}
         for k, v in (metrics or {}).items():
-            if k in map_inst:
-                _es_put(es_serial, chan, map_inst[k], v)
-            elif k in map_cum:
-                _es_put(es_serial, chan, map_cum[k], v)
-
+            if k in map_inst: _es_put(es_serial, chan, map_inst[k], v)
+            elif k in map_cum: _es_put(es_serial, chan, map_cum[k], v)
         async_dispatcher_send(hass, f"{SIGNAL_BEEM_ES_UPDATE}_{es_serial}")
 
     def _process_notifystatus(es_serial: str, chan: int, data: Dict[str, Any]):
-        """NotifyStatus em1:<chan> — mesures instantanées."""
-        if not isinstance(data, dict):
-            return
-        metrics = {
-            "act_power": data.get("act_power") or data.get("power"),
-            "aprt_power": data.get("aprt_power") or data.get("apparent_power"),
-            "voltage": data.get("voltage") or data.get("avg_voltage"),
-            "current": data.get("current") or data.get("avg_current"),
-            "frequency": data.get("frequency") or data.get("freq"),
-            "pf": data.get("pf") or data.get("powerfactor"),
-            "powerfactor": data.get("powerfactor") or data.get("pf"),
-        }
+        if not isinstance(data, dict): return
+        metrics = {"act_power": data.get("act_power") or data.get("power"), "aprt_power": data.get("aprt_power") or data.get("apparent_power"), "voltage": data.get("voltage") or data.get("avg_voltage"), "current": data.get("current") or data.get("avg_current"), "frequency": data.get("frequency") or data.get("freq"), "pf": data.get("pf") or data.get("powerfactor"), "powerfactor": data.get("powerfactor") or data.get("pf")}
         _publish_metrics(es_serial, chan, metrics)
-
     def _process_em1data_status(es_serial: str, chan: int, data: Dict[str, Any]):
-        """NotifyStatus em1data:<chan> — cumulés si présents (certains Firmwares)."""
-        if not isinstance(data, dict):
-            return
-        metrics = {
-            "total_act_energy": data.get("total_act_energy"),
-            "total_act_ret_energy": data.get("total_act_ret_energy"),
-            "lag_react_energy": data.get("lag_react_energy"),
-            "lead_react_energy": data.get("lead_react_energy"),
-            "max_act_power": data.get("max_act_power"),
-            "min_act_power": data.get("min_act_power"),
-            "max_aprt_power": data.get("max_aprt_power"),
-            "min_aprt_power": data.get("min_aprt_power"),
-            "max_voltage": data.get("max_voltage"),
-            "min_voltage": data.get("min_voltage"),
-            "avg_voltage": data.get("avg_voltage"),
-            "max_current": data.get("max_current"),
-            "min_current": data.get("min_current"),
-            "avg_current": data.get("avg_current"),
-        }
+        if not isinstance(data, dict): return
+        metrics = {"total_act_energy": data.get("total_act_energy"), "total_act_ret_energy": data.get("total_act_ret_energy"), "lag_react_energy": data.get("lag_react_energy"), "lead_react_energy": data.get("lead_react_energy"), "max_act_power": data.get("max_act_power"), "min_act_power": data.get("min_act_power"), "max_aprt_power": data.get("max_aprt_power"), "min_aprt_power": data.get("min_aprt_power"), "max_voltage": data.get("max_voltage"), "min_voltage": data.get("min_voltage"), "avg_voltage": data.get("avg_voltage"), "max_current": data.get("max_current"), "min_current": data.get("min_current"), "avg_current": data.get("avg_current")}
         _publish_metrics(es_serial, chan, metrics)
 
     def _handle_rpc_component_result(es_serial: str, obj: dict) -> bool:
-        """Traite une ligne de résultat de type {component, data|values}."""
-        if not isinstance(obj, dict):
-            return False
+        if not isinstance(obj, dict): return False
         comp = str(obj.get("component") or obj.get("comp") or "")
-        if not comp:
-            return False
-
+        if not comp: return False
         if "values" in obj:
             vals = obj.get("values") or []
             keys = obj.get("keys") or obj.get("labels") or DEFAULT_EM1DATA_KEYS
-            try:
-                chan = int(comp.split(":")[1]) if ":" in comp else 0
-            except Exception:
-                chan = 0
+            try: chan = int(comp.split(":")[1]) if ":" in comp else 0
+            except Exception: chan = 0
             if isinstance(vals, list) and vals:
                 last = vals[-1] if isinstance(vals[-1], list) else None
                 if isinstance(last, list):
                     flat = {keys[i] if i < len(keys) else f"k{i}": last[i] for i in range(len(last))}
                     _process_em1data_status(es_serial, chan, flat)
                     return True
-
         data = obj.get("data")
         if isinstance(data, dict):
-            try:
-                chan = int(comp.split(":")[1]) if ":" in comp else 0
-            except Exception:
-                chan = 0
-            if comp.startswith("em1data:"):
-                _process_em1data_status(es_serial, chan, data)
-                return True
-            if comp.startswith("em1:"):
-                _process_notifystatus(es_serial, chan, data)
-                return True
+            try: chan = int(comp.split(":")[1]) if ":" in comp else 0
+            except Exception: chan = 0
+            if comp.startswith("em1data:"): _process_em1data_status(es_serial, chan, data); return True
+            if comp.startswith("em1:"): _process_notifystatus(es_serial, chan, data); return True
             keys = set(data.keys())
             if keys & {"act_power", "aprt_power", "voltage", "avg_voltage", "current", "avg_current", "pf", "powerfactor", "frequency", "freq"}:
                 _process_notifystatus(es_serial, chan, data)
                 return True
-
         return False
 
     def _handle_result_payload(es_serial: str, payload: dict):
-        """Traite un payload possédant un 'result' (sur /rpc, events/rpc, src nu, src/rpc)."""
         result = payload.get("result", {})
-
         def _maybe_push_instant(comp_key: str, val: dict):
-            if not isinstance(val, dict):
-                return False
+            if not isinstance(val, dict): return False
             keys = set(val.keys())
-            if not keys & {"act_power", "aprt_power", "voltage", "avg_voltage", "current", "avg_current", "pf", "powerfactor", "frequency", "freq"}:
-                return False
+            if not keys & {"act_power", "aprt_power", "voltage", "avg_voltage", "current", "avg_current", "pf", "powerfactor", "frequency", "freq"}: return False
             chan = 0
             try:
                 if ":" in comp_key:
                     tail = comp_key.split(":")[-1]
-                    if tail.isdigit():
-                        chan = int(tail)
-            except Exception:
-                pass
+                    if tail.isdigit(): chan = int(tail)
+            except Exception: pass
             _process_notifystatus(es_serial, chan, val)
             return True
-
         handled = False
-
         if isinstance(result, list):
             for obj in result:
-                if isinstance(obj, dict):
-                    handled = _handle_rpc_component_result(es_serial, obj) or handled
-
+                if isinstance(obj, dict): handled = _handle_rpc_component_result(es_serial, obj) or handled
         if isinstance(result, dict):
             handled = _handle_rpc_component_result(es_serial, result) or handled
             for comp_key, value in list(result.items()):
-                if not isinstance(comp_key, str):
-                    continue
+                if not isinstance(comp_key, str): continue
                 if isinstance(value, dict) and comp_key.startswith("em1:"):
-                    try:
-                        chan = int(comp_key.split(":")[1])
-                    except Exception:
-                        chan = 0
-                    _process_notifystatus(es_serial, chan, value)
-                    handled = True
+                    try: chan = int(comp_key.split(":")[1])
+                    except Exception: chan = 0
+                    _process_notifystatus(es_serial, chan, value); handled = True
                 elif isinstance(value, dict) and comp_key.startswith("em1data:"):
-                    try:
-                        chan = int(comp_key.split(":")[1])
-                    except Exception:
-                        chan = 0
-                    _process_em1data_status(es_serial, chan, value)
-                    handled = True
-                else:
-                    handled = _maybe_push_instant(comp_key, value) or handled
-
-        ts = (payload.get("ts")
-              or payload.get("unixtime")
-              or payload.get("params", {}).get("ts")
-              or (isinstance(result, dict) and result.get("ts")))
-        if ts:
-            _get_es_buf(es_serial).update("__last_dt__", str(ts))
-
-        if handled:
-            async_dispatcher_send(hass, f"{SIGNAL_BEEM_ES_UPDATE}_{es_serial}")
-
+                    try: chan = int(comp_key.split(":")[1])
+                    except Exception: chan = 0
+                    _process_em1data_status(es_serial, chan, value); handled = True
+                else: handled = _maybe_push_instant(comp_key, value) or handled
+        ts = (payload.get("ts") or payload.get("unixtime") or payload.get("params", {}).get("ts") or (isinstance(result, dict) and result.get("ts")))
+        if ts: _get_es_buf(es_serial).update("__last_dt__", str(ts))
+        if handled: async_dispatcher_send(hass, f"{SIGNAL_BEEM_ES_UPDATE}_{es_serial}")
     def _handle_events_rpc(es_serial: str, topic: str, msg: dict):
-        """Parse les messages sur brain/<serial>/events/*."""
-        if not isinstance(msg, dict):
-            return
-
-        if "result" in msg:
-            _handle_result_payload(es_serial, msg)
-            return
-
+        if not isinstance(msg, dict): return
+        if "result" in msg: _handle_result_payload(es_serial, msg); return
         method = msg.get("method")
-
         if method in ("getStatus", "EM1Data.GetData", "EM1.GetStatus", "Shelly.GetStatus") and "result" not in msg:
             ek = f"{topic}|{msg.get('id')}|{method}"
-            if not _echo_seen(ek):
-                _LOGGER.debug("[MQTT][brain] Echo %s ignoré sur %s : %s", method, topic, msg)
+            if not _echo_seen(ek): _LOGGER.debug("[MQTT][brain] Echo %s ignoré sur %s : %s", method, topic, msg)
             return
-
         if method == "NotifyStatus":
             params = msg.get("params", {}) or {}
-            if not isinstance(params, dict):
-                return
+            if not isinstance(params, dict): return
             for key, val in params.items():
-                if not isinstance(key, str):
-                    continue
+                if not isinstance(key, str): continue
                 if key.startswith("em1:"):
-                    try:
-                        chan = int(key.split(":")[1])
-                    except Exception:
-                        continue
-                    if isinstance(val, dict):
-                        _process_notifystatus(es_serial, chan, val)
+                    try: chan = int(key.split(":")[1])
+                    except Exception: continue
+                    if isinstance(val, dict): _process_notifystatus(es_serial, chan, val)
                 elif key.startswith("em1data:"):
-                    try:
-                        chan = int(key.split(":")[1])
-                    except Exception:
-                        continue
-                    if isinstance(val, dict):
-                        _process_em1data_status(es_serial, chan, val)
+                    try: chan = int(key.split(":")[1])
+                    except Exception: continue
+                    if isinstance(val, dict): _process_em1data_status(es_serial, chan, val)
             return
-
         if method == "NotifyEvent":
             events = msg.get("params", {}).get("events", []) or []
             for ev in events:
                 comp = (ev or {}).get("component", "")
                 if isinstance(comp, str) and comp.startswith("em1data:"):
-                    try:
-                        chan = int(comp.split(":")[1])
-                    except Exception:
-                        continue
+                    try: chan = int(comp.split(":")[1])
+                    except Exception: continue
                     data = (ev or {}).get("data", {})
                     if isinstance(data, dict) and "values" in data:
                         keys = DEFAULT_EM1DATA_KEYS
@@ -746,144 +549,64 @@ async def async_setup_entry(
                             last = vals[-1] if isinstance(vals[-1], list) else None
                             if isinstance(last, list):
                                 flat = {k: last[i] for i, k in enumerate(keys) if i < len(last)}
-                                _publish_metrics(es_serial, chan, {
-                                    "total_act_energy": flat.get("total_act_energy"),
-                                    "total_act_ret_energy": flat.get("total_act_ret_energy"),
-                                    "lag_react_energy": flat.get("lag_react_energy"),
-                                    "lead_react_energy": flat.get("lead_react_energy"),
-                                    "max_act_power": flat.get("max_act_power"),
-                                    "min_act_power": flat.get("min_act_power"),
-                                    "max_aprt_power": flat.get("max_aprt_power"),
-                                    "min_aprt_power": flat.get("min_aprt_power"),
-                                    "max_voltage": flat.get("max_voltage"),
-                                    "min_voltage": flat.get("min_voltage"),
-                                    "avg_voltage": flat.get("avg_voltage"),
-                                    "max_current": flat.get("max_current"),
-                                    "min_current": flat.get("min_current"),
-                                    "avg_current": flat.get("avg_current"),
-                                })
+                                _publish_metrics(es_serial, chan, {"total_act_energy": flat.get("total_act_energy"), "total_act_ret_energy": flat.get("total_act_ret_energy"), "lag_react_energy": flat.get("lag_react_energy"), "lead_react_energy": flat.get("lead_react_energy"), "max_act_power": flat.get("max_act_power"), "min_act_power": flat.get("min_act_power"), "max_aprt_power": flat.get("max_aprt_power"), "min_aprt_power": flat.get("min_aprt_power"), "max_voltage": flat.get("max_voltage"), "min_voltage": flat.get("min_voltage"), "avg_voltage": flat.get("avg_voltage"), "max_current": flat.get("max_current"), "min_current": flat.get("min_current"), "avg_current": flat.get("avg_current")})
             return
+
 
     def _ingest_battery_payload(serial: str, topic: str, payload):
         serial = _serial_for_uid(serial)
         mbuf = mqtt_buffers.setdefault(serial, MqttBatteryBuffer(availability_window=avail_window))
-
         dt = None
         if isinstance(payload, dict):
             ts_str = payload.get("date") or payload.get("timestamp") or payload.get("ts")
             if ts_str:
                 try:
                     dt = datetime.fromisoformat(str(ts_str).replace("Z", "+00:00"))
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=timezone.utc)
+                    if dt.tzinfo is None: dt = dt.replace(tzinfo=timezone.utc)
                     dt = dt.astimezone(timezone.utc)
-                except Exception:
-                    dt = None
-        if dt is None:
-            dt = datetime.now(timezone.utc)
+                except Exception: dt = None
+        if dt is None: dt = datetime.now(timezone.utc)
         iso_str = dt.isoformat(timespec="seconds")
         mbuf.update("__last_dt__", iso_str)
         mbuf.update("mqtt_last_update", iso_str)
-
-        wanted = [
-            "solar_power", "inverter_power", "battery_power", "grid_power", "soc",
-            "mppt1_power", "mppt2_power", "mppt3_power",
-        ]
+        wanted = ["solar_power", "inverter_power", "battery_power", "grid_power", "soc", "mppt1_power", "mppt2_power", "mppt3_power"]
         if isinstance(payload, dict):
             for k in wanted:
                 if k in payload:
                     v = payload[k]
-                    if k != "soc":
-                        v = _to_float(v)
+                    if k != "soc": v = _to_float(v)
                     if v is not None:
                         mbuf.update(k, v)
-                        camel_map = {
-                            "solar_power": "solarPower",
-                            "inverter_power": "inverterPower",
-                            "battery_power": "batteryPower",
-                            "grid_power": "meterPower",
-                            "mppt1_power": "mppt1Power",
-                            "mppt2_power": "mppt2Power",
-                            "mppt3_power": "mppt3Power",
-                            "soc": "soc",
-                        }
+                        camel_map = {"solar_power": "solarPower", "inverter_power": "inverterPower", "battery_power": "batteryPower", "grid_power": "meterPower", "mppt1_power": "mppt1Power", "mppt2_power": "mppt2Power", "mppt3_power": "mppt3Power", "soc": "soc"}
                         alias = camel_map.get(k)
-                        if alias:
-                            mbuf.update(alias, v)
-
-        _LOGGER.info("[MQTT][battery] topic=%s serial=%s -> buffered keys=%s",
-                     topic, serial, list(mbuf._data.keys()))
+                        if alias: mbuf.update(alias, v)
+        _LOGGER.info("[MQTT][battery] topic=%s serial=%s -> buffered keys=%s", topic, serial, list(mbuf._data.keys()))
         async_dispatcher_send(hass, f"{SIGNAL_BEEM_BATTERY_UPDATE}_{serial}")
 
-    def _make_battery_any_cb():
-        async def _battery_any_cb(msg):
-            topic = str(msg.topic)
-            parts = topic.split("/")
-            if len(parts) < 4 or parts[0] != "battery" or parts[2] != "sys" or parts[3] != "streaming":
-                return
-            serial = _serial_for_uid(parts[1])
-
-            payload = _decode_payload_bytes(msg.payload)
-            if payload is None:
-                _LOGGER.debug("[MQTT][battery] payload illisible sur %s", topic)
-                return
-            _LOGGER.debug("[MQTT] Reçu topic=%s payload=%s", topic, payload)
-            try:
-                _ingest_battery_payload(serial, topic, payload)
-            except Exception as e:
-                _LOGGER.error("Exception traitement battery MQTT (%s): %s", topic, e)
-        return _battery_any_cb
 
     def _make_es_cb(es_serial_uid: str):
         async def _es_cb(msg):
             topic = str(msg.topic)
             payload = _decode_payload_bytes(msg.payload)
-            if payload is None:
-                _LOGGER.debug("[MQTT][brain] payload illisible sur %s", topic)
-                return
-            _LOGGER.debug("[MQTT] Reçu topic=%s payload=%s", topic, payload)
+            if payload is None: _LOGGER.debug("[MQTT][brain] payload illisible sur %s", topic); return
+            _LOGGER.debug("[MQTT][brain][HA] Reçu topic=%s payload=%s", topic, payload)
             try:
                 if topic.endswith("/online"):
-                    hass.data[DOMAIN][entry.entry_id]["brain_state"][es_serial_uid] = payload
-                    store = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-                    if not store:
-                        _LOGGER.debug("[MQTT][brain] entry %s absent (unload ?), on ignore.", entry.entry_id)
-                        return
-                    store.setdefault("brain_state", {})
-                    store["brain_state"][es_serial_uid] = payload
-                    _LOGGER.info("[MQTT][brain] topic=%s serial=%s payload=%s", topic, es_serial_uid, payload)
-                    async_dispatcher_send(hass, f"{SIGNAL_BEEM_ES_UPDATE}_{es_serial_uid}")
+                    if hass.data.get(DOMAIN, {}).get(entry.entry_id):
+                        hass.data[DOMAIN][entry.entry_id].setdefault("brain_state", {})[es_serial_uid] = payload
+                        async_dispatcher_send(hass, f"{SIGNAL_BEEM_ES_UPDATE}_{es_serial_uid}")
                     return
-
-                if "/events/" in topic:
-                    _handle_events_rpc(es_serial_uid, topic, payload)
-                    if isinstance(payload, dict):
-                        ts = payload.get("ts") or payload.get("unixtime") or payload.get("params", {}).get("ts")
-                        if ts:
-                            _get_es_buf(es_serial_uid).update("__last_dt__", str(ts))
-                    return
-
-                if topic.endswith("/rpc") and isinstance(payload, dict):
-                    if "result" not in payload:
-                        ek = f"{topic}|{payload.get('id')}|{payload.get('method')}"
-                        if not _echo_seen(ek):
-                            _LOGGER.debug("[MQTT][brain] Ignoré (echo request sans result) sur %s : %s", topic, payload)
-                        return
-
-                if isinstance(payload, dict) and "result" in payload:
-                    _handle_result_payload(es_serial_uid, payload)
-                    return
-
-                store = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-                if store:
-                    store.setdefault("brain_state", {})
-                    store["brain_state"][es_serial_uid] = payload
-                _LOGGER.info("[MQTT][brain] topic=%s serial=%s payload=%s", topic, es_serial_uid, payload)
-                async_dispatcher_send(hass, f"{SIGNAL_BEEM_ES_UPDATE}_{es_serial_uid}")
-            except KeyError as e:
-                _LOGGER.debug("[MQTT][brain] Entry dict manquant (%s), message ignoré.", e)
-            except Exception as e:
-                _LOGGER.warning("[MQTT][brain] parsing error on %s: %s", topic, e)
+                if isinstance(payload, dict):
+                    if "result" in payload: _handle_result_payload(es_serial_uid, payload)
+                    elif "method" in payload: _handle_events_rpc(es_serial_uid, topic, payload)
+                    else: _LOGGER.debug("[MQTT][brain][HA] Payload dict non traité sur %s", topic)
+                else:
+                    _LOGGER.info("[MQTT][brain][HA] Payload non-dict (peut-être un écho de /command) sur %s: %s", topic, payload)
+                    if hass.data.get(DOMAIN, {}).get(entry.entry_id):
+                        hass.data[DOMAIN][entry.entry_id].setdefault("brain_state", {})[es_serial_uid] = payload
+                        async_dispatcher_send(hass, f"{SIGNAL_BEEM_ES_UPDATE}_{es_serial_uid}")
+            except KeyError as e: _LOGGER.debug("[MQTT][brain][HA] Entry dict manquant (%s), message ignoré.", e)
+            except Exception as e: _LOGGER.warning("[MQTT][brain][HA] parsing error on %s: %s", topic, e)
         return _es_cb
 
     async def _subscribe_via_ha_mqtt():
@@ -900,18 +623,10 @@ async def async_setup_entry(
             if not es_l:
                 continue
             topics_ha = {
-                f"brain/{es_l}",
-                f"brain/{es_l}/online",
-                f"brain/{es_l}/rpc",
-                f"brain/{es_l}/events/#",
-                f"brain/{es_l}/+/rpc",
-                f"brain/{es_l}/+",
-                f"brain/{es_u}",
-                f"brain/{es_u}/online",
-                f"brain/{es_u}/rpc",
-                f"brain/{es_u}/events/#",
-                f"brain/{es_u}/+/rpc",
-                f"brain/{es_u}/+",
+                f"brain/{es_l}", f"brain/{es_l}/online", f"brain/{es_l}/rpc", f"brain/{es_l}/events/#",
+                f"brain/{es_l}/+/rpc", f"brain/{es_l}/+",
+                f"brain/{es_u}", f"brain/{es_u}/online", f"brain/{es_u}/rpc", f"brain/{es_u}/events/#",
+                f"brain/{es_u}/+/rpc", f"brain/{es_u}/+",
             }
             for t in topics_ha:
                 seen = hass.data[DOMAIN][entry.entry_id]["ha_mqtt_subscribed"]
@@ -922,232 +637,68 @@ async def async_setup_entry(
                 subs.append(t)
                 _LOGGER.info("✅ Abonné MQTT EnergySwitch (HA) : %s", t)
         _LOGGER.info("📋 Topics MQTT (HA) effectivement abonnés : %s", subs)
-
+        
     async def _start_beem_cloud_battery_listener():
-        """Écoute le broker Cloud Beem sur battery/<SERIAL>/sys/streaming (SERIAL en MAJUSCULE) avec auto-reconnect."""
-        if not mqtt_client:
-            _LOGGER.warning("[MQTT][battery] Aucun mqtt_client Cloud Beem disponible dans hass.data")
-            return
-
-        topics = []
-        for s in sorted(battery_serials):
-            if not s:
-                continue
-            ser_l = _serial_for_uid(s)
-            ser_u = _serial_for_topic(s)
-            topics.extend([
-                f"battery/{ser_l}/sys/streaming",
-                f"battery/{ser_u}/sys/streaming",
-            ])
-        if not topics:
-            _LOGGER.info("[MQTT][battery] Aucun topic Cloud abonné (pas de serial ?)")
-            return
-
-        async def _parse_and_ingest(topic, raw):
-            parts = topic.split("/")
-            if len(parts) < 4 or parts[0] != "battery" or parts[2] != "sys" or parts[3] != "streaming":
-                return
+        if not mqtt_client: _LOGGER.warning("[MQTT][battery][Cloud] Aucun mqtt_client Cloud Beem disponible."); return
+        battery_topics = {f"battery/{_serial_for_topic(s)}/sys/streaming" for s in battery_serials if s}
+        if not battery_topics: _LOGGER.info("[MQTT][battery][Cloud] Aucun topic batterie à écouter."); return
+        while True:
             try:
-                payload = json.loads(raw)
-            except Exception:
-                try:
-                    payload = raw.decode() if isinstance(raw, (bytes, bytearray)) else str(raw)
-                except Exception:
-                    payload = str(raw)
-            serial_uid = _serial_for_uid(parts[1]) if len(parts) > 1 else ""
-            if not serial_uid:
-                return
-            _LOGGER.debug("[MQTT][battery][Cloud] Reçu topic=%s payload=%s", topic, payload)
-            _ingest_battery_payload(serial_uid, topic, payload)
+                async with mqtt_client:
+                    hass.data[DOMAIN][entry.entry_id]["cloud_mqtt_connected"] = True
+                    _LOGGER.info("[MQTT][battery][Cloud] Connexion établie. Abonnement aux topics batterie...")
+                    for t in sorted(list(battery_topics)):
+                        await mqtt_client.subscribe(t)
+                        _LOGGER.info("✅ Abonné Cloud : %s", t)
+                    async for message in mqtt_client.messages:
+                        # --- CORRECTION APPLIQUÉE ICI ---
+                        # 1. On convertit le topic en chaîne de caractères
+                        topic_str = str(message.topic)
+                        # 2. On travaille ensuite avec cette chaîne
+                        serial_uid = _serial_for_uid(topic_str.split('/')[1])
+                        payload = _decode_payload_bytes(message.payload)
+                        _ingest_battery_payload(serial_uid, topic_str, payload)
 
-        if hasattr(mqtt_client, "messages"):
-            while True:
-                try:
-                    _LOGGER.info("[MQTT][battery][Cloud] (re)connexion listener via 'messages' (itérateur async)…")
-                    try:
-                        for t in topics:
-                            try:
-                                res = mqtt_client.subscribe(t)
-                                if asyncio.iscoroutine(res):
-                                    await res
-                                _LOGGER.info("✅ (re)Abonné Cloud : %s", t)
-                            except Exception as e:
-                                _LOGGER.warning("⚠️ Échec subscribe Cloud %s : %s", t, e)
-                        async for message in mqtt_client.messages:
-                            topic = str(getattr(message, "topic", ""))
-                            raw = getattr(message, "payload", b"")
-                            await _parse_and_ingest(topic, raw)
-                    except asyncio.CancelledError:
-                        _LOGGER.info("[MQTT][battery][Cloud] Listener annulé (unload).")
-                        raise
-                    except Exception as e:
-                        _LOGGER.warning("[MQTT][battery][Cloud] Listener via messages iterator interrompu (%s). Reconnexion dans 10s…", e)
-                        if entry.entry_id not in hass.data.get(DOMAIN, {}):
-                            return
-                        await asyncio.sleep(10)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as e:
-                    _LOGGER.warning("[MQTT][battery][Cloud] Loop erreur (%s). Reconnexion dans 10s…", e)
-                    if entry.entry_id not in hass.data.get(DOMAIN, {}):
-                        return
-                    await asyncio.sleep(10)
-
-        _LOGGER.warning(
-            "[MQTT][battery][Cloud] mqtt_client non supporté (pas de 'messages' async iterator). Type=%s",
-            type(mqtt_client).__name__,
-        )
-
-    async def _start_beem_cloud_brain_listener():
-        """Écoute le broker Cloud Beem sur brain/<SERIAL>/* (SERIAL en MAJUSCULE) avec auto-reconnect."""
-        if not mqtt_client:
-            _LOGGER.warning("[MQTT][brain][Cloud] Aucun mqtt_client Cloud Beem disponible")
-            return
-
-        serials_upper = sorted(_resolve_energy_switch_serials())
-        if not serials_upper:
-            _LOGGER.info("[MQTT][brain][Cloud] Aucun brain serial → pas d’abonnement Cloud brain/#")
-            return
-
-        topics = []
-        for s in serials_upper:
-            es_u = s
-            es_l = _serial_for_uid(s)
-            topics.extend([
-                f"brain/{es_l}/events/#",
-                f"brain/{es_l}/online",
-                f"brain/{es_l}/rpc",
-                f"brain/{es_l}/+/rpc",
-                f"brain/{es_l}/+",
-                f"brain/{es_u}/events/#",
-                f"brain/{es_u}/online",
-                f"brain/{es_u}/rpc",
-                f"brain/{es_u}/+/rpc",
-                f"brain/{es_u}/+",
-            ])
-
-        async def _handle(topic: str, raw):
-            try:
-                payload = json.loads(raw)
-            except Exception:
-                try:
-                    payload = raw.decode() if isinstance(raw, (bytes, bytearray)) else str(raw)
-                except Exception:
-                    payload = str(raw)
-
-            parts = topic.split("/")
-            if len(parts) < 2 or parts[0] != "brain":
-                return
-            es_serial_uid = _serial_for_uid(parts[1])
-
-            if topic.endswith("/online"):
-                hass.data[DOMAIN][entry.entry_id]["brain_state"][es_serial_uid] = payload
-                _LOGGER.info("[MQTT][brain][Cloud] topic=%s serial=%s payload=%s", topic, es_serial_uid, payload)
-                async_dispatcher_send(hass, f"{SIGNAL_BEEM_ES_UPDATE}_{es_serial_uid}")
-                return
-
-            if "/events/" in topic:
-                if isinstance(payload, dict) and "result" in payload:
-                    _handle_result_payload(es_serial_uid, payload)
-                else:
-                    _handle_events_rpc(es_serial_uid, topic, payload)
-                return
-
-            if topic.endswith("/rpc"):
-                if isinstance(payload, dict) and "result" in payload:
-                    _handle_result_payload(es_serial_uid, payload)
-                else:
-                    _LOGGER.debug("[MQTT][brain][Cloud] Ignoré (echo request sans result) sur %s : %s", topic, payload)
-                return
-
-            if isinstance(payload, dict) and "result" in payload:
-                _handle_result_payload(es_serial_uid, payload)
-                return
-
-            _LOGGER.debug("[MQTT][brain][Cloud] Trame non reconnue %s : %s", topic, payload)
-
-        if hasattr(mqtt_client, "messages"):
-            while True:
-                try:
-                    _LOGGER.info("[MQTT][brain][Cloud] (re)connexion listener via 'messages'…")
-                    try:
-                        for t in topics:
-                            try:
-                                res = mqtt_client.subscribe(t)
-                                if asyncio.iscoroutine(res):
-                                    await res
-                                _LOGGER.info("✅ (re)Abonné Cloud : %s", t)
-                            except Exception as e:
-                                _LOGGER.warning("⚠️ Échec subscribe Cloud %s : %s", t, e)
-                        async for message in mqtt_client.messages:
-                            topic = str(getattr(message, "topic", ""))
-                            raw = getattr(message, "payload", b"")
-                            await _handle(topic, raw)
-                    except asyncio.CancelledError:
-                        _LOGGER.info("[MQTT][brain][Cloud] Listener annulé (unload).")
-                        raise
-                    except Exception as e:
-                        _LOGGER.warning("[MQTT][brain][Cloud] Listener interrompu (%s). Reconnexion dans 10s…", e)
-                        if entry.entry_id not in hass.data.get(DOMAIN, {}):
-                            return
-                        await asyncio.sleep(10)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as e:
-                    _LOGGER.warning("[MQTT][brain][Cloud] Loop erreur (%s). Reconnexion dans 10s…", e)
-                    if entry.entry_id not in hass.data.get(DOMAIN, {}):
-                        return
-                    await asyncio.sleep(10)
-
-        _LOGGER.warning("[MQTT][brain][Cloud] mqtt_client non supporté (pas de 'messages').")
+            except asyncio.CancelledError: _LOGGER.info("[MQTT][battery][Cloud] Listener batterie annulé (unload)."); break
+            except Exception as e: _LOGGER.warning("[MQTT][battery][Cloud] Listener batterie interrompu (%s). Reconnexion dans 15s…", repr(e))
+            finally:
+                if hass.data.get(DOMAIN, {}).get(entry.entry_id):
+                    hass.data[DOMAIN][entry.entry_id]["cloud_mqtt_connected"] = False
+            if entry.entry_id not in hass.data.get(DOMAIN, {}): break
+            await asyncio.sleep(15)
 
     async def _renew_battery_streaming(_now=None, entry=None):
-        if not entry or not hass.data.get(DOMAIN, {}).get(entry.entry_id):
-            _LOGGER.debug("Renouvellement streaming ignoré : l'entrée a été déchargée.")
-            return
+        if not entry or not hass.data.get(DOMAIN, {}).get(entry.entry_id): return
         try:
-            if not battery_serials or not coordinator:
-                return
+            if not battery_serials or not coordinator: return
             candidates = []
             for attr in ("async_ensure_streaming", "async_keep_streaming", "ensure_streaming"):
                 fn = getattr(coordinator, attr, None)
-                if callable(fn):
-                    candidates.append(fn)
+                if callable(fn): candidates.append(fn)
             api = getattr(coordinator, "api", None)
             if api:
                 for attr in ("async_ensure_streaming", "async_keep_streaming", "ensure_streaming"):
                     fn = getattr(api, attr, None)
-                    if callable(fn):
-                        candidates.append(fn)
+                    if callable(fn): candidates.append(fn)
             serials = [s for s in battery_serials if s]
             for fn in candidates:
                 try:
                     ok_any = False
                     for s in serials:
                         res = fn(s)
-                        if asyncio.iscoroutine(res):
-                            res = await res
+                        if asyncio.iscoroutine(res): res = await res
                         ok_any = bool(res) or ok_any
-                    if ok_any:
-                        _LOGGER.debug("[MQTT][battery] Renouvellement streaming OK via %s", getattr(fn, '__name__', fn))
-                        return
-                except Exception as e:
-                    _LOGGER.debug("[MQTT][battery] Hook %s a échoué: %s", getattr(fn, '__name__', fn), e)
+                    if ok_any: _LOGGER.debug("[MQTT][battery] Renouvellement streaming OK via %s", getattr(fn, '__name__', fn)); return
+                except Exception as e: _LOGGER.debug("[MQTT][battery] Hook %s a échoué: %s", getattr(fn, '__name__', fn), e)
             _LOGGER.warning("[MQTT][battery] Impossible de renouveler le streaming avec les hooks testés.")
-        except Exception as e:
-            _LOGGER.warning("[MQTT][battery] Erreur lors du renouvellement du streaming: %s", e)
+        except Exception as e: _LOGGER.warning("[MQTT][battery] Erreur lors du renouvellement du streaming: %s", e)
 
     async def _tick_availability(_now=None, entry=None):
-        if not entry or not hass.data.get(DOMAIN, {}).get(entry.entry_id):
-            _LOGGER.debug("Tick d'availability ignoré : l'entrée a été déchargée.")
-            return
-        for serial in list(mqtt_buffers.keys()):
-            async_dispatcher_send(hass, f"{SIGNAL_BEEM_BATTERY_UPDATE}_{serial}")
-        for es_serial in list(mqtt_buffers_es.keys()):
-            async_dispatcher_send(hass, f"{SIGNAL_BEEM_ES_UPDATE}_{es_serial}")
+        if not entry or not hass.data.get(DOMAIN, {}).get(entry.entry_id): return
+        for serial in list(mqtt_buffers.keys()): async_dispatcher_send(hass, f"{SIGNAL_BEEM_BATTERY_UPDATE}_{serial}")
+        for es_serial in list(mqtt_buffers_es.keys()): async_dispatcher_send(hass, f"{SIGNAL_BEEM_ES_UPDATE}_{es_serial}")
         try:
-            if not coordinator:
-                return
+            if not coordinator: return
             for serial, buf in list(mqtt_buffers.items()):
                 if not buf.is_fresh():
                     for attr in ("async_ensure_streaming", "async_keep_streaming", "ensure_streaming"):
@@ -1155,144 +706,104 @@ async def async_setup_entry(
                         if callable(fn):
                             try:
                                 res = fn(serial)
-                                if asyncio.iscoroutine(res):
-                                    await res
+                                if asyncio.iscoroutine(res): await res
                                 break
-                            except Exception:
-                                pass
+                            except Exception: pass
             stale_store = hass.data[DOMAIN][entry.entry_id].setdefault("stale_counts", {})
             for serial, buf in list(mqtt_buffers.items()):
                 fresh = buf.is_fresh()
                 stale_store[serial] = 0 if fresh else stale_store.get(serial, 0) + 1
                 if not fresh and stale_store[serial] >= 4:
-                    _LOGGER.info(
-                        "[MQTT][battery] Flux figé pour %s → rafraîchissement REST global + relance streaming",
-                        serial,
-                    )
+                    _LOGGER.info("[MQTT][battery] Flux figé pour %s → rafraîchissement REST global + relance streaming", serial)
                     try:
-                        if hasattr(coordinator, "_async_update_data"):
-                            await coordinator._async_update_data()
-                    except Exception as e:
-                        _LOGGER.debug("Échec refresh REST global: %s", e)
+                        if hasattr(coordinator, "_async_update_data"): await coordinator._async_update_data()
+                    except Exception as e: _LOGGER.debug("Échec refresh REST global: %s", e)
                     await _renew_battery_streaming()
                     stale_store[serial] = 0
-        except Exception:
-            pass
+        except Exception: pass
 
     async def _poll_es_once(_now=None, entry=None):
-        # === METTEZ À JOUR LE BLOC DE SÉCURITÉ EXISTANT ===
         if not entry or not hass.data.get(DOMAIN, {}).get(entry.entry_id):
             _LOGGER.debug("Polling ES ignoré : l'entrée a été déchargée.")
             return
-        """Publie périodiquement plusieurs RPC 'compat' vers chaque EnergySwitch connu (HA + Cloud)."""
-        if not hass.data.get(DOMAIN, {}).get(entry.entry_id):
-            _LOGGER.debug("Polling ES ignoré : l'entrée a été déchargée.")
-            return
 
+        entry_hass_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+        cloud_mqtt_connected = entry_hass_data.get("cloud_mqtt_connected", False)
         serials_upper = _resolve_energy_switch_serials()
-        if not serials_upper:
-            return
+        if not serials_upper: return
 
         for es_u in sorted(serials_upper):
             es_l = _serial_for_uid(es_u)
-            if not es_l:
-                continue
+            if not es_l: continue
 
             src_topic = f"brain/{es_l}/ha_{entry.entry_id}"
 
+            # On ajoute Shelly.GetStatus en premier, c'est notre "coup de pied"
             rpc_calls = [
-                {"method": "EM1.GetStatus", "params": {}},
+                {"method": "Shelly.GetStatus", "params": {}},
+                {"method": "EM1.GetStatus", "params": {}}
             ]
             for ch in (0, 1):
                 rpc_calls.append({"method": "EM1Data.GetData", "params": {"id": ch}})
 
             for call in rpc_calls:
                 body = {"id": str(uuid.uuid4()), "method": call["method"], "params": call["params"], "src": src_topic}
-                try:
-                    await ha_mqtt.async_publish(hass, f"brain/{es_l}/rpc", json.dumps(body), qos=0, retain=False)
-                    _LOGGER.debug("[MQTT][brain] → %s publié sur brain/%s/rpc : %s", call["method"], es_l, body)
-                except Exception as e:
-                    _LOGGER.warning("[MQTT][brain] Échec publish %s vers brain/%s/rpc : %s", call["method"], es_l, e)
-                if mqtt_client:
-                    try:
-                        res = mqtt_client.publish(f"brain/{es_u}/rpc", json.dumps(body))
-                        if asyncio.iscoroutine(res):
-                            await res
-                        _LOGGER.debug("[MQTT][brain][Cloud] → %s publié sur brain/%s/rpc", call["method"], es_u)
-                    except Exception as e:
-                        _LOGGER.debug("[MQTT][brain][Cloud] publish %s échoué: %s", call["method"], e)
+                payload_str = json.dumps(body)
 
-                body2 = {"id": str(uuid.uuid4()), "method": call["method"], "params": call["params"], "src": src_topic}
+                # Polling HA (local)
                 try:
-                    await ha_mqtt.async_publish(hass, f"brain/{es_l}/events/rpc", json.dumps(body2), qos=0, retain=False)
-                    _LOGGER.debug("[MQTT][brain] → %s publié sur brain/%s/events/rpc : %s", call["method"], es_l, body2)
+                    await ha_mqtt.async_publish(hass, f"brain/{es_l}/rpc", payload_str, qos=0, retain=False)
+                    await ha_mqtt.async_publish(hass, f"brain/{es_l}/events/rpc", payload_str, qos=0, retain=False)
+                    _LOGGER.debug("[MQTT][brain][HA] → Poll '%s' sur brain/%s/[events/]rpc", call["method"], es_l)
                 except Exception as e:
-                    _LOGGER.warning("[MQTT][brain] Échec publish %s vers brain/%s/events/rpc : %s", call["method"], es_l, e)
-                if mqtt_client:
+                    _LOGGER.warning("[MQTT][brain][HA] Échec publish sur /rpc ou /events/rpc : %s", e)
+
+                # Polling Cloud (par sécurité)
+                if cloud_mqtt_connected:
                     try:
-                        res = mqtt_client.publish(f"brain/{es_u}/events/rpc", json.dumps(body2))
-                        if asyncio.iscoroutine(res):
-                            await res
-                        _LOGGER.debug("[MQTT][brain][Cloud] → %s publié sur brain/%s/events/rpc", call["method"], es_u)
+                        await mqtt_client.publish(f"brain/{es_u}/rpc", payload_str)
+                        _LOGGER.debug("[MQTT][brain][Cloud] → Poll '%s' sur brain/%s/rpc", call["method"], es_u)
                     except Exception as e:
-                        _LOGGER.debug("[MQTT][brain][Cloud] publish events %s échoué: %s", call["method"], e)
+                        _LOGGER.debug("[MQTT][brain][Cloud] Échec publish sur /rpc : %s", e)
 
     async def _start_after_start(_: object = None) -> None:
         if hass.state != CoreState.running:
             for _ in range(50):
                 await asyncio.sleep(0.1)
-                if hass.state == CoreState.running:
-                    break
+                if hass.state == CoreState.running: break
         try:
             await ha_mqtt.async_wait_for_mqtt_client(hass)
             _LOGGER.info("MQTT client prêt → abonnements MQTT (HA).")
-        except Exception as e:
-            _LOGGER.warning("Impossible d'attendre le client MQTT : %s. On tente quand même.", e)
-
+        except Exception as e: _LOGGER.warning("Impossible d'attendre le client MQTT : %s. On tente quand même.", e)
         hass.data[DOMAIN][entry.entry_id]["timed_tasks"] = []
-        
         await _subscribe_via_ha_mqtt()
-
         if mqtt_client:
             task_bat = hass.async_create_task(
                 _start_beem_cloud_battery_listener(),
                 name=f"{DOMAIN}_beem_cloud_battery_{entry.entry_id}",
             )
             hass.data[DOMAIN][entry.entry_id]["beem_cloud_task_battery"] = task_bat
-
-            task_brain = hass.async_create_task(
-                _start_beem_cloud_brain_listener(),
-                name=f"{DOMAIN}_beem_cloud_brain_{entry.entry_id}",
-            )
-            hass.data[DOMAIN][entry.entry_id]["beem_cloud_task_brain"] = task_brain
-        else:
-            _LOGGER.warning("[MQTT][Cloud] mqtt_client Cloud Beem absent → pas d'écoute battery/* ni brain/*")
-
+        else: _LOGGER.warning("[MQTT][Cloud] mqtt_client Cloud Beem absent → pas d'écoute.")
         renew_streaming_for_entry = functools.partial(_renew_battery_streaming, entry=entry)
         tick_availability_for_entry = functools.partial(_tick_availability, entry=entry)
-
         await renew_streaming_for_entry()
-        
         cancel_renew = async_track_time_interval(hass, renew_streaming_for_entry, timedelta(seconds=90))
         hass.data[DOMAIN][entry.entry_id]["timed_tasks"].append(cancel_renew)
-
         cancel_tick = async_track_time_interval(hass, tick_availability_for_entry, timedelta(seconds=30))
         hass.data[DOMAIN][entry.entry_id]["timed_tasks"].append(cancel_tick)
-
         if ENABLE_ES_POLLING:
             poll_es_for_entry = functools.partial(_poll_es_once, entry=entry)
             _LOGGER.info("Le polling de l'EnergySwitch est activé (via constante de développement).")
             await poll_es_for_entry()
             cancel_poll = async_track_time_interval(hass, poll_es_for_entry, timedelta(seconds=60))
             hass.data[DOMAIN][entry.entry_id]["timed_tasks"].append(cancel_poll)
-        else:
-            _LOGGER.info("Le polling de l'EnergySwitch est désactivé (via constante de développement).")
-
+        else: _LOGGER.info("Le polling de l'EnergySwitch est désactivé (via constante de développement).")
         coordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")
         if coordinator:
             cancel_keepalive = async_track_time_interval(hass, coordinator.async_keepalive, timedelta(minutes=5))
             hass.data[DOMAIN][entry.entry_id]["timed_tasks"].append(cancel_keepalive)
             
+    # --- DÉMARRAGE DES TÂCHES ---
     if hass.state == CoreState.running:
         hass.async_create_task(_start_after_start())
     else:
@@ -1847,11 +1358,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if task_bat:
         task_bat.cancel()
         _LOGGER.info("Tâche MQTT Cloud Beem (battery) annulée pour l'entrée: %s", entry.entry_id)
-
-    task_brain = entry_data.get("beem_cloud_task_brain")
-    if task_brain:
-        task_brain.cancel()
-        _LOGGER.info("Tâche MQTT Cloud Beem (brain) annulée pour l'entrée: %s", entry.entry_id)
     
     _LOGGER.info("<<< Déchargement des entités Beem (sensor) terminé (OK=%s)", unload_ok)
     return unload_ok
