@@ -625,8 +625,8 @@ async def async_setup_entry(
             topics_ha = {
                 f"brain/{es_l}", f"brain/{es_l}/online", f"brain/{es_l}/rpc", f"brain/{es_l}/events/#",
                 f"brain/{es_l}/+/rpc", f"brain/{es_l}/+",
-                f"brain/{es_u}", f"brain/{es_u}/online", f"brain/{es_u}/rpc", f"brain/{es_u}/events/#",
-                f"brain/{es_u}/+/rpc", f"brain/{es_u}/+",
+#                f"brain/{es_u}", f"brain/{es_u}/online", f"brain/{es_u}/rpc", f"brain/{es_u}/events/#",
+#                f"brain/{es_u}/+/rpc", f"brain/{es_u}/+",
             }
             for t in topics_ha:
                 seen = hass.data[DOMAIN][entry.entry_id]["ha_mqtt_subscribed"]
