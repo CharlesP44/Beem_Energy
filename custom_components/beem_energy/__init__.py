@@ -82,7 +82,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             protocol=ProtocolVersion.V5,
             identifier=client_id,
         )
-        await mqtt_client.__aenter__()
+
     except Exception as err:
         _LOGGER.error("Échec de la connexion MQTT à Beem: %s", err)
         raise ConfigEntryNotReady from err
