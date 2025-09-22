@@ -113,9 +113,9 @@ La visualisation utilise la carte personnalisée **Power Flow Card Plus**, dispo
 2. Recherchez **Power Flow Card Plus**.
 3. Cliquez sur "Installer" puis redémarrez Home Assistant si nécessaire.
 
-> ℹ️ Pour plus d’infos : [Power Flow Card Plus sur GitHub](https://github.com/Topix90/power-flow-card-plus)
+> ℹ️ Pour plus d’infos : [Power Flow Card Plus sur GitHub](https://github.com/flixlix/power-flow-card-plus)
 
 ### Aperçu
 
-![aperçu lovelace](./screenshots/lovelace_preview.png)
+![aperçu lovelace](https://user-images.githubusercontent.com/61006057/227771568-78497ecc-e863-46f2-b29e-e15c7c20a154.gif)
 
