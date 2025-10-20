@@ -13,6 +13,31 @@ body:
         Describe the feature you would like.
 
   - type: input
+    id: version
+    attributes:
+      label: Version / Version
+      description: Indiquez la version de Beem_Energy utilisée. / Specify the version of Beem_Energy used.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: equipment_type
+    attributes:
+      label: Type d'équipement / Equipment type
+      description: Cochez le(s) type(s) d'équipement concerné(s). / Check the equipment type(s) involved.
+      options:
+        - label: Beem Batterie AC (panneaux non raccordés directement à la batterie) / Beem Battery AC (panels not directly connected to battery)
+          required: false
+        - label: Beem Batterie DC (panneaux raccordés à la batterie) / Beem Battery DC (panels connected to battery)
+          required: false
+        - label: Panneaux Plug&Play / Plug&Play Panels
+          required: false
+        - label: Borne de recharge / Charging Station
+          required: false
+        - label: EnergySwitch
+          required: false
+
+  - type: input
     id: motivation
     attributes:
       label: Motivation / Motivation
