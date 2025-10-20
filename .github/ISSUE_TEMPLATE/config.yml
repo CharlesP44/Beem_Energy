@@ -3,11 +3,3 @@ contact_links:
   - name: "📄 Documentation / Documentation"
     url: "https://github.com/CharlesP44/Beem_Energy#readme"
     about: "Consultez la documentation avant de créer une issue. / Check the documentation before creating an issue."
-
-  - name: "🐛 Signaler un bug / Report a bug"
-    url: "https://github.com/CharlesP44/Beem_Energy/issues/new?assignees=&labels=bug&template=bug_report.yml"
-    about: "Créer une issue pour signaler un bug. / Create an issue to report a bug."
-
-  - name: "✨ Nouvelle fonctionnalité / Feature Request"
-    url: "https://github.com/CharlesP44/Beem_Energy/issues/new?assignees=&labels=enhancement&template=feature_request.yml"
-    about: "Proposer une nouvelle fonctionnalité. / Suggest a new feature."
