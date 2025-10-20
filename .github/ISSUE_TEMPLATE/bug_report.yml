@@ -20,6 +20,23 @@ body:
     validations:
       required: true
 
+  - type: checkboxes
+    id: equipment_type
+    attributes:
+      label: Type d'équipement / Equipment type
+      description: Cochez le(s) type(s) d'équipement concerné(s). / Check the equipment type(s) involved.
+      options:
+        - label: Beem Batterie AC (panneaux non raccordés directement à la batterie) / Beem Battery AC (panels not directly connected to battery)
+          required: false
+        - label: Beem Batterie DC (panneaux raccordés à la batterie) / Beem Battery DC (panels connected to battery)
+          required: false
+        - label: Panneaux Plug&Play / Plug&Play Panels
+          required: false
+        - label: Borne de recharge / Charging Station
+          required: false
+        - label: EnergySwitch
+          required: false
+
   - type: input
     id: steps
     attributes:
@@ -31,7 +48,7 @@ body:
         2. 
         3. 
     validations:
-      required: false
+      required: true
 
   - type: input
     id: expected
@@ -39,7 +56,7 @@ body:
       label: Comportement attendu / Expected behavior
       description: Expliquez ce que vous attendiez. / Explain what you expected to happen.
     validations:
-      required: false
+      required: true
 
   - type: input
     id: actual
@@ -47,7 +64,7 @@ body:
       label: Comportement actuel / Actual behavior
       description: Expliquez ce qui s’est passé réellement. / Explain what actually happened.
     validations:
-      required: false
+      required: true
 
   - type: textarea
     id: logs
