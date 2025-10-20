@@ -1,0 +1,35 @@
+name: 🔒 Dependabot Alerts Monitor
+
+on:
+  schedule:
+    - cron: "0 8 * * *"   # Chaque jour à 8h (UTC)
+  workflow_dispatch:      # Permet un lancement manuel depuis l’onglet Actions
+
+jobs:
+  check-alerts:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: read
+      contents: read
+      issues: write
+
+    steps:
+      - name: 📥 Récupération des alertes Dependabot
+        id: alerts
+        run: |
+          response=$(curl -s -H "Accept: application/vnd.github+json" \
+                          -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+                          https://api.github.com/repos/${{ github.repository }}/dependabot/alerts?state=open)
+          echo "$response" > alerts.json
+          count=$(jq '. | length' alerts.json)
+          echo "count=$count" >> $GITHUB_OUTPUT
+
+      - name: 🔔 Notification
+        if: steps.alerts.outputs.count != '0'
+        run: |
+          echo "🚨 ${{ steps.alerts.outputs.count }} alertes Dependabot détectées !"
+          echo "Vérifie-les ici : https://github.com/${{ github.repository }}/security/dependabot"
+
+      - name: ✅ Aucune alerte (optionnel)
+        if: steps.alerts.outputs.count == '0'
+        run: echo "✅ Aucune nouvelle alerte Dependabot détectée."
