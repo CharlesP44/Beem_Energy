@@ -12,6 +12,9 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 0    # ❌ empêche la création de PR
     rebase-strategy: "disabled"
+    ignore:
+      # Dependabot should not update Home Assistant as that should match the homeassistant key in hacs.json
+      - dependency-name: "homeassistant"
 
   # 🔹 Analyse des GitHub Actions (sans PR)
   - package-ecosystem: "github-actions"
