@@ -1,0 +1,58 @@
+name: "✨ Nouvelle fonctionnalité / Feature Request"
+description: "Proposer une nouvelle fonctionnalité / Suggest a new feature"
+title: "[FEATURE] "
+labels: ["enhancement"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Description / Description
+        Décrivez la fonctionnalité que vous souhaitez proposer.  
+        Describe the feature you would like.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version / Version
+      description: Indiquez la version de Beem_Energy utilisée. / Specify the version of Beem_Energy used.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: equipment_type
+    attributes:
+      label: Type d'équipement / Equipment type
+      description: Cochez le(s) type(s) d'équipement concerné(s). / Check the equipment type(s) involved.
+      options:
+        - label: Beem Batterie AC (panneaux non raccordés directement à la batterie) / Beem Battery AC (panels not directly connected to battery)
+          required: false
+        - label: Beem Batterie DC (panneaux raccordés à la batterie) / Beem Battery DC (panels connected to battery)
+          required: false
+        - label: Panneaux Plug&Play / Plug&Play Panels
+          required: false
+        - label: Borne de recharge / Charging Station
+          required: false
+        - label: EnergySwitch
+          required: false
+
+  - type: input
+    id: motivation
+    attributes:
+      label: Motivation / Motivation
+      description: Pourquoi cette fonctionnalité serait utile ? / Why would this feature be useful?
+    validations:
+      required: true
+
+  - type: input
+    id: alternatives
+    attributes:
+      label: Alternatives / Alternatives considered
+      description: Quelles autres solutions pourraient exister ? / What other solutions could exist?
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Informations supplémentaires / Additional information
+      description: Tout autre détail pertinent, captures d'écran, exemples d'utilisation, etc. / Any other relevant information, screenshots, usage examples, etc.
