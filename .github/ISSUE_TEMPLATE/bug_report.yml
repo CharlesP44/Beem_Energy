@@ -1,0 +1,62 @@
+name: "🐛 Bug / Bug Report"
+description: "Signaler un bug / Report a bug"
+title: "[BUG] "
+labels: ["bug"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Description / Description
+        Décrivez clairement le problème rencontré.  
+        Describe the issue clearly.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version / Version
+      description: Indiquez la version de Beem_Energy utilisée. / Specify the version of Beem_Energy used.
+    validations:
+      required: true
+
+  - type: input
+    id: steps
+    attributes:
+      label: Étapes pour reproduire / Steps to reproduce
+      description: |
+        Décrivez les étapes pour reproduire le bug.  
+        Describe steps to reproduce the bug.
+        1. 
+        2. 
+        3. 
+    validations:
+      required: false
+
+  - type: input
+    id: expected
+    attributes:
+      label: Comportement attendu / Expected behavior
+      description: Expliquez ce que vous attendiez. / Explain what you expected to happen.
+    validations:
+      required: false
+
+  - type: input
+    id: actual
+    attributes:
+      label: Comportement actuel / Actual behavior
+      description: Expliquez ce qui s’est passé réellement. / Explain what actually happened.
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Journaux / Logs
+      description: Copiez ici les logs pertinents ou erreurs. / Paste any relevant logs or errors here.
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Informations supplémentaires / Additional information
+      description: Tout autre détail utile, captures d'écran, etc. / Any other relevant information, screenshots, etc.
