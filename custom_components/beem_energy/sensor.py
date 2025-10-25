@@ -317,7 +317,16 @@ async def async_setup_entry(
             _add_es(source.get(key))
 
     rest_batteries = {}
-    if coordinator and hasattr(coordinator, "data") and "batteries_by_serial" in coordinator.data:
+    if not coordinator or not getattr(coordinator, "data", None):
+        _LOGGER.warning("[SENSOR] Coordinateur Beem non prêt ou sans données — initialisation différée.")
+        return
+
+    if "batteries_by_serial" not in coordinator.data:
+        _LOGGER.warning("[SENSOR] Aucune donnée batterie dans le coordinateur, aucun capteur ajouté.")
+        return
+
+    # Données REST prêtes
+     if coordinator and hasattr(coordinator, "data") and "batteries_by_serial" in coordinator.data:
         for serial, bat in coordinator.data["batteries_by_serial"].items():
             rest_batteries[_serial_for_uid(serial)] = bat
 
