@@ -326,7 +326,7 @@ async def async_setup_entry(
         return
 
     # Données REST prêtes
-     if coordinator and hasattr(coordinator, "data") and "batteries_by_serial" in coordinator.data:
+    if coordinator and hasattr(coordinator, "data") and "batteries_by_serial" in coordinator.data:
         for serial, bat in coordinator.data["batteries_by_serial"].items():
             rest_batteries[_serial_for_uid(serial)] = bat
 
