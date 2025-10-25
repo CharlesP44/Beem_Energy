@@ -1,9 +1,10 @@
-# Copyright (c) 2025 CharlesP44 
+# Copyright (c) 2025 CharlesP44
 # SPDX-License-Identifier: MIT
 from homeassistant.helpers.storage import Store
 import logging
 
 _LOGGER = logging.getLogger(__name__)
+
 
 class BeemSecureStorage:
     def __init__(self, hass):
