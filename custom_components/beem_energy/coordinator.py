@@ -170,7 +170,13 @@ class BeemCoordinator(DataUpdateCoordinator):
                 "beemboxes_by_id": self.beemboxes_by_id,
                 "beemboxes_summary_by_id": self.beemboxes_summary_by_id,
             }
-            
+
+            _LOGGER.debug("[STREAMING] Rafraîchissement des flux après la mise à jour REST.")
+            all_serials = list(self.batteries_by_serial.keys())
+            if all_serials:
+                for serial in all_serials:
+                    await self.async_ensure_streaming(serial)
+
             _LOGGER.debug(
                 "Données REST normalisées (main=%s), batteries=%d, beemboxes=%d, summaries=%d",
                 main_battery_serial, len(self.batteries_by_serial), len(self.beemboxes_by_id), len(self.beemboxes_summary_by_id)
