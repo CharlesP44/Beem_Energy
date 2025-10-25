@@ -1,14 +1,11 @@
-# Copyright (c) 2025 CharlesP44 
+# Copyright (c) 2025 CharlesP44
 # SPDX-License-Identifier: MIT
-import logging
 from typing import Any, Dict
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 
 from .const import DOMAIN
-
-_LOGGER = logging.getLogger(__name__)
 
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
@@ -18,7 +15,6 @@ async def async_get_config_entry_diagnostics(
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data.get("coordinator")
     mqtt_client = data.get("mqtt_client")
-    batteries = data.get("batteries", [])
     energyswitch_topic = data.get("energyswitch_topic")
     mqtt_task = data.get("mqtt_task")
 
@@ -66,8 +62,13 @@ async def async_get_config_entry_diagnostics(
                 "rest_lastKnownMeasureDate": battery.get("lastKnownMeasureDate"),
                 "fields": {k: battery.get(k) for k in battery.keys()},
             }
-            mqtt_buffers = getattr(hass.data[DOMAIN][entry.entry_id], "mqtt_buffers", {})
-            buffer_diag = {}
+
+            mqtt_buffers = hass.data[DOMAIN][entry.entry_id].get("mqtt_buffers", {})
+            current_buffer = mqtt_buffers.get(serial.lower())
+            if current_buffer and hasattr(current_buffer, '_data'):
+                buffer_diag = {k: v[0] for k, v in current_buffer._data.items()}
+            else:
+                buffer_diag = {}
             dev_info["mqtt_buffer"] = buffer_diag
             diagnostics["devices"][serial] = dev_info
 

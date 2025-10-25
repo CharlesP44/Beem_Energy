@@ -4,17 +4,21 @@ from typing import Dict, Any
 
 # Clés de la batterie qui NE doivent PAS être écrasées par le live
 PROTECTED_FIELDS = {
-    "id", "serialNumber", "batteryId",
+    "id",
+    "serialNumber",
+    "batteryId",
 }
 
 # Aliases possibles pour la date dans le live (selon payload)
 DATE_ALIASES = ("lastKnownMeasureDate", "ts", "timestamp", "date")
+
 
 def _first_present(d: Dict[str, Any], keys):
     for k in keys:
         if k in d and d[k] is not None:
             return d[k]
     return None
+
 
 def _flatten_live_payload(d: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(d, dict):
@@ -25,7 +29,10 @@ def _flatten_live_payload(d: Dict[str, Any]) -> Dict[str, Any]:
             return inner
     return d
 
-def merge_live_into_battery(battery: Dict[str, Any], live_raw: Dict[str, Any]) -> Dict[str, Any]:
+
+def merge_live_into_battery(
+    battery: Dict[str, Any], live_raw: Dict[str, Any]
+) -> Dict[str, Any]:
     """Merge *direct* du live-data au niveau racine de la batterie.
     - aplati (data/result/payload/live)
     - écrase les clés existantes *sauf* PROTECTED_FIELDS

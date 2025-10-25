@@ -17,6 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 
 BATTERY_MODES = ["auto", "pause", "advanced"]
 
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -24,25 +25,29 @@ async def async_setup_entry(
 ) -> None:
     """Configure les entités select à partir d'une entrée de configuration."""
     coordinator: BeemCoordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")
-    
+
     if not coordinator or not coordinator.data:
-        _LOGGER.warning("Coordinateur Beem non prêt, les entités select ne peuvent être ajoutées.")
+        _LOGGER.warning(
+            "Coordinateur Beem non prêt, les entités select ne peuvent être ajoutées."
+        )
         return
 
     entities = []
     for serial, battery_data in coordinator.data.get("batteries_by_serial", {}).items():
         if battery_id := battery_data.get("id"):
             entities.append(BeemBatteryModeSelect(coordinator, serial, battery_id))
-            
+
             entities.append(BeemChargePowerSelect(coordinator, serial, battery_id))
 
     async_add_entities(entities)
 
+
 class BeemBatteryModeSelect(CoordinatorEntity[BeemCoordinator], SelectEntity):
     """Représente l'entité pour changer le mode de la batterie Beem."""
+
     _attr_has_entity_name = True
     translation_key = "battery_mode"
-    
+
     def __init__(self, coordinator: BeemCoordinator, serial: str, battery_id: int):
         """Initialise l'entité select."""
         super().__init__(coordinator)
@@ -57,7 +62,9 @@ class BeemBatteryModeSelect(CoordinatorEntity[BeemCoordinator], SelectEntity):
     @property
     def _battery_data(self) -> dict | None:
         """Raccourci pour accéder aux données de cette batterie."""
-        return self.coordinator.data.get("batteries_by_serial", {}).get(self._serial.upper())
+        return self.coordinator.data.get("batteries_by_serial", {}).get(
+            self._serial.upper()
+        )
 
     @property
     def available(self) -> bool:
@@ -67,7 +74,7 @@ class BeemBatteryModeSelect(CoordinatorEntity[BeemCoordinator], SelectEntity):
         """
         if not super().available or not self._battery_data:
             return False
-        
+
         control_params = self._battery_data.get("control_parameters", {})
         return control_params.get("canChangeMode", False)
 
@@ -76,7 +83,7 @@ class BeemBatteryModeSelect(CoordinatorEntity[BeemCoordinator], SelectEntity):
         """Retourne l'option actuellement sélectionnée depuis les control_parameters."""
         if not self._battery_data:
             return None
-        
+
         control_params = self._battery_data.get("control_parameters", {})
         mode = str(control_params.get("mode", "")).lower()
 
@@ -84,17 +91,26 @@ class BeemBatteryModeSelect(CoordinatorEntity[BeemCoordinator], SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         """Appelé lorsque l'utilisateur sélectionne une nouvelle option."""
-        _LOGGER.info("Demande de changement de mode pour la batterie %s vers '%s'", self._serial, option)
+        _LOGGER.info(
+            "Demande de changement de mode pour la batterie %s vers '%s'",
+            self._serial,
+            option,
+        )
 
         token_rest = self.coordinator.token_rest
 
         try:
-            await set_battery_control_parameters(token_rest, self._battery_id, {"mode": option})
+            await set_battery_control_parameters(
+                token_rest, self._battery_id, {"mode": option}
+            )
         except (BeemAuthError, BeemConnectionError) as e:
-            _LOGGER.error("Erreur de connexion ou d'authentification lors du changement de mode : %s", e)
+            _LOGGER.error(
+                "Erreur de connexion ou d'authentification lors du changement de mode : %s",
+                e,
+            )
         except Exception as e:
             _LOGGER.error("Erreur inattendue lors du changement de mode : %s", e)
-        
+
         await self.coordinator.async_request_refresh()
 
     @property
@@ -103,6 +119,7 @@ class BeemBatteryModeSelect(CoordinatorEntity[BeemCoordinator], SelectEntity):
         return {
             "identifiers": {(DOMAIN, self._serial)},
         }
+
 
 class BeemChargePowerSelect(CoordinatorEntity[BeemCoordinator], SelectEntity):
     translation_key = "charge_power"
@@ -118,14 +135,15 @@ class BeemChargePowerSelect(CoordinatorEntity[BeemCoordinator], SelectEntity):
 
     @property
     def _control_params(self) -> dict:
-        return self.coordinator.data.get("batteries_by_serial", {}).get(self._serial.upper(), {}).get("control_parameters", {})
+        return (
+            self.coordinator.data.get("batteries_by_serial", {})
+            .get(self._serial.upper(), {})
+            .get("control_parameters", {})
+        )
 
     @property
     def available(self) -> bool:
-        return (
-            super().available
-            and self._control_params.get("mode") == "advanced"
-        )
+        return super().available and self._control_params.get("mode") == "advanced"
 
     @property
     def current_option(self) -> str | None:
@@ -135,11 +153,13 @@ class BeemChargePowerSelect(CoordinatorEntity[BeemCoordinator], SelectEntity):
     @property
     def device_info(self):
         return {"identifiers": {(DOMAIN, self._serial)}}
-        
+
     async def async_select_option(self, option: str) -> None:
         try:
             await set_battery_control_parameters(
-                self.coordinator.token_rest, self._battery_id, {"chargeFromGridMaxPower": int(option)}
+                self.coordinator.token_rest,
+                self._battery_id,
+                {"chargeFromGridMaxPower": int(option)},
             )
             await self.coordinator.async_request_refresh()
         except Exception as e:
