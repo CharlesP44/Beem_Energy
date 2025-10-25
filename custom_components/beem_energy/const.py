@@ -56,10 +56,9 @@ ICON_MPPT = "mdi:solar-panel-large"
 SENSOR_KEY_MAP = {
     # Instantanés principaux
     "battery_power": "batteryPower",
-    "grid_power": "meterPower",         # "grid" côté payload -> "meter" côté logique
+    "grid_power": "meterPower",  # "grid" côté payload -> "meter" côté logique
     "solar_power": "solarPower",
     "inverter_power": "inverterPower",
-
     # État batterie
     "soc": "soc",
     "working_mode_label": "workingModeLabel",
@@ -69,12 +68,10 @@ SENSOR_KEY_MAP = {
     "capacity_in_kwh": "capacityInKwh",
     "max_power": "maxPower",
     "is_battery_working_mode_ok": "isBatteryWorkingModeOk",
-
     # MPPT
     "mppt1_power": "mppt1Power",
     "mppt2_power": "mppt2Power",
     "mppt3_power": "mppt3Power",
-
     # Date/horodatage connus dans certains payloads
     "date": "lastKnownMeasureDate",
     "timestamp": "lastKnownMeasureDate",
@@ -101,10 +98,9 @@ MQTT_ONLY_SENSORS = [
 
 SENSOR_DEFINITIONS = {
     "batteryPower": (UNIT_WATT, ICON_BATTERY),
-    "meterPower":   (UNIT_WATT, ICON_POWER),
-    "solarPower":   (UNIT_WATT, ICON_SOLAR),
-    "inverterPower":(UNIT_WATT, ICON_INVERTER),
-
+    "meterPower": (UNIT_WATT, ICON_POWER),
+    "solarPower": (UNIT_WATT, ICON_SOLAR),
+    "inverterPower": (UNIT_WATT, ICON_INVERTER),
     "soc": (UNIT_PERCENT, ICON_CHARGE),
     "workingModeLabel": (None, "mdi:cog-outline"),
     "numberOfCycles": (None, "mdi:cog-clockwise"),
@@ -115,7 +111,6 @@ SENSOR_DEFINITIONS = {
     "isBatteryWorkingModeOk": (None, ICON_CHECK),
     "lastKnownMeasureDate": (None, "mdi:clock-outline"),
     "isBatteryInBackupMode": (None, "mdi:backup-restore"),
-
     "mppt1Power": (UNIT_WATT, ICON_SOLAR),
     "mppt2Power": (UNIT_WATT, ICON_SOLAR),
     "mppt3Power": (UNIT_WATT, ICON_SOLAR),
