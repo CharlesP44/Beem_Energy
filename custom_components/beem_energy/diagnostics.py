@@ -1,13 +1,11 @@
 # Copyright (c) 2025 CharlesP44
 # SPDX-License-Identifier: MIT
-import logging
 from typing import Any, Dict
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 
 from .const import DOMAIN
-
 
 
 async def async_get_config_entry_diagnostics(
@@ -66,7 +64,12 @@ async def async_get_config_entry_diagnostics(
                 "fields": {k: battery.get(k) for k in battery.keys()},
             }
 
-            buffer_diag = {}
+            mqtt_buffers = hass.data[DOMAIN][entry.entry_id].get("mqtt_buffers", {})
+            current_buffer = mqtt_buffers.get(serial.lower())
+            if current_buffer and hasattr(current_buffer, '_data'):
+                buffer_diag = {k: v[0] for k, v in current_buffer._data.items()}
+            else:
+                buffer_diag = {}
             dev_info["mqtt_buffer"] = buffer_diag
             diagnostics["devices"][serial] = dev_info
 
