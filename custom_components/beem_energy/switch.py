@@ -16,7 +16,14 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback):
     coordinator: BeemCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    
+    if not coordinator or not getattr(coordinator, "data", None):
+        _LOGGER.warning("[SWITCH] Coordinateur Beem non prêt, aucune entité switch ajoutée.")
+        return
+
+    if "batteries_by_serial" not in coordinator.data:
+        _LOGGER.warning("[SWITCH] Aucune donnée batterie dans le coordinateur.")
+        return
+  
     entities = []
     for serial, battery_data in coordinator.data.get("batteries_by_serial", {}).items():
         if battery_id := battery_data.get("id"):
