@@ -667,32 +667,6 @@ async def async_setup_entry(
             if entry.entry_id not in hass.data.get(DOMAIN, {}): break
             await asyncio.sleep(15)
 
-    async def _renew_battery_streaming(_now=None, entry=None):
-        if not entry or not hass.data.get(DOMAIN, {}).get(entry.entry_id): return
-        try:
-            if not battery_serials or not coordinator: return
-            candidates = []
-            for attr in ("async_ensure_streaming", "async_keep_streaming", "ensure_streaming"):
-                fn = getattr(coordinator, attr, None)
-                if callable(fn): candidates.append(fn)
-            api = getattr(coordinator, "api", None)
-            if api:
-                for attr in ("async_ensure_streaming", "async_keep_streaming", "ensure_streaming"):
-                    fn = getattr(api, attr, None)
-                    if callable(fn): candidates.append(fn)
-            serials = [s for s in battery_serials if s]
-            for fn in candidates:
-                try:
-                    ok_any = False
-                    for s in serials:
-                        res = fn(s)
-                        if asyncio.iscoroutine(res): res = await res
-                        ok_any = bool(res) or ok_any
-                    if ok_any: _LOGGER.debug("[MQTT][battery] Renouvellement streaming OK via %s", getattr(fn, '__name__', fn)); return
-                except Exception as e: _LOGGER.debug("[MQTT][battery] Hook %s a échoué: %s", getattr(fn, '__name__', fn), e)
-            _LOGGER.warning("[MQTT][battery] Impossible de renouveler le streaming avec les hooks testés.")
-        except Exception as e: _LOGGER.warning("[MQTT][battery] Erreur lors du renouvellement du streaming: %s", e)
-
     async def _tick_availability(_now=None, entry=None):
         if not entry or not hass.data.get(DOMAIN, {}).get(entry.entry_id): return
         for serial in list(mqtt_buffers.keys()): async_dispatcher_send(hass, f"{SIGNAL_BEEM_BATTERY_UPDATE}_{serial}")
@@ -716,9 +690,11 @@ async def async_setup_entry(
                 if not fresh and stale_store[serial] >= 4:
                     _LOGGER.info("[MQTT][battery] Flux figé pour %s → rafraîchissement REST global + relance streaming", serial)
                     try:
-                        if hasattr(coordinator, "_async_update_data"): await coordinator._async_update_data()
-                    except Exception as e: _LOGGER.debug("Échec refresh REST global: %s", e)
-                    await _renew_battery_streaming()
+                        if hasattr(coordinator, "async_request_refresh"):
+                            await coordinator.async_request_refresh()
+                    except Exception as e:
+                        _LOGGER.debug("Échec de la demande de refresh REST global: %s", e)
+
                     stale_store[serial] = 0
         except Exception: pass
 
@@ -784,11 +760,7 @@ async def async_setup_entry(
             )
             hass.data[DOMAIN][entry.entry_id]["beem_cloud_task_battery"] = task_bat
         else: _LOGGER.warning("[MQTT][Cloud] mqtt_client Cloud Beem absent → pas d'écoute.")
-        renew_streaming_for_entry = functools.partial(_renew_battery_streaming, entry=entry)
         tick_availability_for_entry = functools.partial(_tick_availability, entry=entry)
-        await renew_streaming_for_entry()
-        cancel_renew = async_track_time_interval(hass, renew_streaming_for_entry, timedelta(seconds=90))
-        hass.data[DOMAIN][entry.entry_id]["timed_tasks"].append(cancel_renew)
         cancel_tick = async_track_time_interval(hass, tick_availability_for_entry, timedelta(seconds=30))
         hass.data[DOMAIN][entry.entry_id]["timed_tasks"].append(cancel_tick)
         if ENABLE_ES_POLLING:
