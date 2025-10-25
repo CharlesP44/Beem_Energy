@@ -1,4 +1,4 @@
-# Copyright (c) 2025 CharlesP44 
+# Copyright (c) 2025 CharlesP44
 # SPDX-License-Identifier: MIT
 import logging
 from typing import Any, Dict
@@ -9,6 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
 
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
@@ -66,7 +67,9 @@ async def async_get_config_entry_diagnostics(
                 "rest_lastKnownMeasureDate": battery.get("lastKnownMeasureDate"),
                 "fields": {k: battery.get(k) for k in battery.keys()},
             }
-            mqtt_buffers = getattr(hass.data[DOMAIN][entry.entry_id], "mqtt_buffers", {})
+            mqtt_buffers = getattr(
+                hass.data[DOMAIN][entry.entry_id], "mqtt_buffers", {}
+            )
             buffer_diag = {}
             dev_info["mqtt_buffer"] = buffer_diag
             diagnostics["devices"][serial] = dev_info
