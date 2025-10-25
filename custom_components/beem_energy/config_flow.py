@@ -19,6 +19,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     }
 )
 
+
 class BeemEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Flux de configuration de l'intégration Beem Energy."""
 
