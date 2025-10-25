@@ -25,8 +25,12 @@ async def async_setup_entry(
     """Configure les entités select à partir d'une entrée de configuration."""
     coordinator: BeemCoordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")
     
-    if not coordinator or not coordinator.data:
-        _LOGGER.warning("Coordinateur Beem non prêt, les entités select ne peuvent être ajoutées.")
+    if not coordinator or not getattr(coordinator, "data", None):
+        _LOGGER.warning("[SELECT] Coordinateur Beem non prêt ou vide, aucune entité select ajoutée.")
+        return
+
+    if "batteries_by_serial" not in coordinator.data:
+        _LOGGER.warning("[SELECT] Aucune donnée batterie dans le coordinateur.")
         return
 
     entities = []
