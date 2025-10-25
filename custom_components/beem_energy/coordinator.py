@@ -92,6 +92,7 @@ class BeemCoordinator(DataUpdateCoordinator):
             solar_equipments_list = []
             main_battery_serial = None
             main_battery = {}
+            batteries = []
 
             if box_summary_data:
                 self.beemboxes_summary_by_id = {
