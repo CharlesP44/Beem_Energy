@@ -73,13 +73,25 @@ class BeemCoordinator(DataUpdateCoordinator):
     async def _fetch_data_with_token(self, token: str):
         """Logique de récupération et de normalisation des données."""
         _LOGGER.debug("Début du rafraîchissement des données REST.")
-        
+        # --- Initialisations de sécurité ---
+        batteries = []                # évite UnboundLocalError en cas d'échec API
+        box_summary_data = {}          # valeur par défaut si la requête échoue
+        devices_payload = {}           # idem
+        energyswitch_serial = None     # évite l'utilisation non définie
+
         try:
             _LOGGER.debug("Appel à get_devices et get_box_summary en parallèle.")
             devices_payload, box_summary_data = await asyncio.gather(
                 get_devices(token),
                 get_box_summary(token)
             )
+        except aiohttp.ClientError as err:
+            _LOGGER.error("Erreur réseau Beem (devices/summary): %s", err)
+            raise BeemConnectionError(f"Erreur réseau Beem : {err}")
+        except Exception as err:
+            _LOGGER.error("Erreur inattendue lors de la récupération des données Beem : %s", err, exc_info=True)
+            raise
+
             _LOGGER.debug("Données brutes reçues. devices_payload: %s, box_summary_data: %s", bool(devices_payload), bool(box_summary_data))
 
             self.batteries_by_serial = {}
@@ -177,9 +189,12 @@ class BeemCoordinator(DataUpdateCoordinator):
             return self.data
 
         except Exception as err:
-            _LOGGER.error("Erreur critique inattendue dans _fetch_data_with_token: %s", err, exc_info=True)
-            raise
-
+            _LOGGER.error(
+                "Erreur critique inattendue dans _fetch_data_with_token: %s",
+                err,
+                exc_info=True
+            )
+            raise UpdateFailed(f"Erreur inattendue lors de la récupération des données Beem : {err}")
 
     async def async_keepalive(self, now=None):
         """Keepalive REST qui imite la séquence de l'app Beem pour maintenir le flux de données actif."""
