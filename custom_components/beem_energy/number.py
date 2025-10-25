@@ -15,19 +15,22 @@ from .beem_api import set_battery_control_parameters
 
 _LOGGER = logging.getLogger(__name__)
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback):
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+):
     coordinator: BeemCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    
+
     entities = []
     for serial, battery_data in coordinator.data.get("batteries_by_serial", {}).items():
         if battery_id := battery_data.get("id"):
             entities.append(BeemMinSocNumber(coordinator, serial, battery_id))
             entities.append(BeemMaxSocNumber(coordinator, serial, battery_id))
-            
+
     async_add_entities(entities)
 
 class BaseBeemAdvancedNumber(CoordinatorEntity[BeemCoordinator], NumberEntity):
     """Classe de base pour les nombres du mode avancé."""
+
     _attr_mode = NumberMode.BOX
     _attr_native_unit_of_measurement = PERCENTAGE
 
@@ -39,7 +42,11 @@ class BaseBeemAdvancedNumber(CoordinatorEntity[BeemCoordinator], NumberEntity):
 
     @property
     def _control_params(self) -> dict:
-        return self.coordinator.data.get("batteries_by_serial", {}).get(self._serial.upper(), {}).get("control_parameters", {})
+        return (
+            self.coordinator.data.get("batteries_by_serial", {})
+            .get(self._serial.upper(), {})
+            .get("control_parameters", {})
+        )
 
     @property
     def available(self) -> bool:
@@ -48,12 +55,14 @@ class BaseBeemAdvancedNumber(CoordinatorEntity[BeemCoordinator], NumberEntity):
     @property
     def device_info(self):
         return {"identifiers": {(DOMAIN, self._serial)}}
-        
+
     async def async_set_native_value(self, value: float) -> None:
         """Met à jour la valeur."""
         try:
             await set_battery_control_parameters(
-                self.coordinator.token_rest, self._battery_id, {self._api_key: int(value)}
+                self.coordinator.token_rest,
+                self._battery_id,
+                {self._api_key: int(value)},
             )
             await self.coordinator.async_request_refresh()
         except Exception as e:
@@ -83,7 +92,7 @@ class BeemMinSocNumber(BaseBeemAdvancedNumber):
     #     Disponible si le mode est avancé ET si le blocage de décharge est activé.
     #     """
     #     return (
-    #         super().available 
+    #         super().available
     #         and self._control_params.get("mode") == "advanced"
     #         and self._control_params.get("preventDischarge", False)
     #     )
