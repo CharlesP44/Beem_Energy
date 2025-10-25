@@ -14,16 +14,22 @@ from .beem_api import set_battery_control_parameters
 
 _LOGGER = logging.getLogger(__name__)
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback):
+
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+):
     coordinator: BeemCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-    
+
     entities = []
     for serial, battery_data in coordinator.data.get("batteries_by_serial", {}).items():
         if battery_id := battery_data.get("id"):
-            entities.append(BeemAllowChargeFromGridSwitch(coordinator, serial, battery_id))
+            entities.append(
+                BeemAllowChargeFromGridSwitch(coordinator, serial, battery_id)
+            )
             entities.append(BeemPreventDischargeSwitch(coordinator, serial, battery_id))
-            
+
     async_add_entities(entities)
+
 
 class BaseBeemAdvancedSwitch(CoordinatorEntity[BeemCoordinator], SwitchEntity):
     """Classe de base pour les switchs du mode avancé."""
@@ -37,7 +43,9 @@ class BaseBeemAdvancedSwitch(CoordinatorEntity[BeemCoordinator], SwitchEntity):
     @property
     def _control_params(self) -> dict:
         """Raccourci pour accéder aux paramètres de contrôle."""
-        battery_data = self.coordinator.data.get("batteries_by_serial", {}).get(self._serial.upper(), {})
+        battery_data = self.coordinator.data.get("batteries_by_serial", {}).get(
+            self._serial.upper(), {}
+        )
         return battery_data.get("control_parameters", {})
 
     @property
@@ -57,11 +65,16 @@ class BaseBeemAdvancedSwitch(CoordinatorEntity[BeemCoordinator], SwitchEntity):
             )
             await self.coordinator.async_request_refresh()
         except Exception as e:
-            _LOGGER.error("Erreur lors de la mise à jour du paramètre %s: %s", self.entity_description.key, e)
+            _LOGGER.error(
+                "Erreur lors de la mise à jour du paramètre %s: %s",
+                self.entity_description.key,
+                e,
+            )
+
 
 class BeemAllowChargeFromGridSwitch(BaseBeemAdvancedSwitch):
     translation_key = "allow_charge_from_grid"
-    
+
     def __init__(self, coordinator, serial, battery_id):
         super().__init__(coordinator, serial, battery_id)
         self.object_id = f"{serial.lower()}_allow_charge_from_grid"
@@ -77,6 +90,7 @@ class BeemAllowChargeFromGridSwitch(BaseBeemAdvancedSwitch):
 
     async def async_turn_off(self, **kwargs):
         await self._set_param(False)
+
 
 class BeemPreventDischargeSwitch(BaseBeemAdvancedSwitch):
     translation_key = "prevent_discharge"
