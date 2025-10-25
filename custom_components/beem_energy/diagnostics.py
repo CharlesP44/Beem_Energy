@@ -67,11 +67,15 @@ async def async_get_config_entry_diagnostics(
                 "rest_lastKnownMeasureDate": battery.get("lastKnownMeasureDate"),
                 "fields": {k: battery.get(k) for k in battery.keys()},
             }
-            mqtt_buffers = getattr(
-                hass.data[DOMAIN][entry.entry_id], "mqtt_buffers", {}
-            )
-            buffer_diag = {}
-            dev_info["mqtt_buffer"] = buffer_diag
+            mqtt_buffers = getattr(hass.data[DOMAIN][entry.entry_id], "mqtt_buffers", {})
+                        current_buffer = mqtt_buffers.get(serial.lower())
+                        if current_buffer and hasattr(current_buffer, '_data'):
+                            # Extrait les valeurs du buffer pour le rapport de diagnostic
+                            buffer_diag = {k: v[0] for k, v in current_buffer._data.items()}
+                        else:
+                            buffer_diag = {}
+                        dev_info["mqtt_buffer"] = buffer_diag
+
             diagnostics["devices"][serial] = dev_info
 
         if "solar_equipments" in last_data:
