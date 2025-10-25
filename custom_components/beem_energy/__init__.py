@@ -49,7 +49,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         devices_payload = await get_devices(token_rest)
         batteries = devices_payload.get("batteries", []) or []
         energyswitches = devices_payload.get("energySwitches", []) or []
-        energyswitch_serial = energyswitches[0].get("serialNumber") if energyswitches else None
+        energyswitch_serial = (
+            energyswitches[0].get("serialNumber") if energyswitches else None
+        )
     except Exception as err:
         raise ConfigEntryNotReady(f"Beem devices indisponibles: {err}") from err
 
@@ -65,6 +67,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady("Erreur d'authentification (temporaire ?).")
 
     try:
+
         def make_ssl_context():
             ctx = ssl.create_default_context()
             ctx.check_hostname = True
@@ -128,12 +131,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Nettoyage à la suppression de l'intégration."""
     _LOGGER.info("Déchargement de l'intégration Beem Energy pour %s", entry.entry_id)
-    
-    platforms_unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+    platforms_unloaded = await hass.config_entries.async_unload_platforms(
+        entry, PLATFORMS
+    )
 
     if platforms_unloaded:
         entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
-        
+
         if entry_data:
             mqtt_client = entry_data.get("mqtt_client")
             if mqtt_client:
@@ -141,10 +146,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     await mqtt_client.__aexit__(None, None, None)
                     _LOGGER.info("Client MQTT Cloud Beem fermé proprement.")
                 except Exception as e:
-                    _LOGGER.warning("Erreur lors de la fermeture du client MQTT : %s", e)
+                    _LOGGER.warning(
+                        "Erreur lors de la fermeture du client MQTT : %s", e
+                    )
 
             hass.data[DOMAIN].pop(entry.entry_id, None)
-            _LOGGER.info("Données pour l'entrée %s nettoyées de hass.data.", entry.entry_id)
+            _LOGGER.info(
+                "Données pour l'entrée %s nettoyées de hass.data.", entry.entry_id
+            )
     else:
         _LOGGER.error("Échec du déchargement des plateformes pour %s.", entry.entry_id)
 
