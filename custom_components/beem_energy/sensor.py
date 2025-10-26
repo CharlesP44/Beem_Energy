@@ -503,7 +503,11 @@ async def async_setup_entry(
                 if ":" in comp_key:
                     tail = comp_key.split(":")[-1]
                     if tail.isdigit(): chan = int(tail)
-            except Exception: pass
+            except Exception as e:
+                _LOGGER.debug(
+                    "Impossible de parser le canal depuis la clé de composant '%s', utilisation du canal 0 par défaut. Erreur: %s",
+                    comp_key, e
+                )
             _process_notifystatus(es_serial, chan, val)
             return True
         handled = False
