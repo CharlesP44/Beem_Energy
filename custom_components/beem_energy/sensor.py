@@ -1364,9 +1364,18 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     )
 
     task_bat = entry_data.get("beem_cloud_task_battery")
-    if task_bat:
+    if task_bat and not task_bat.done():
+        _LOGGER.info("Annulation de la tâche MQTT Cloud Beem pour l'entrée: %s", entry.entry_id)
         task_bat.cancel()
-        _LOGGER.info("Tâche MQTT Cloud Beem (battery) annulée pour l'entrée: %s", entry.entry_id)
+        try:
+            await asyncio.wait_for(task_bat, timeout=5.0)
+            _LOGGER.info("La tâche MQTT Cloud Beem a été annulée avec succès.")
+        except asyncio.CancelledError:
+            _LOGGER.debug("La tâche MQTT Cloud Beem a bien été annulée.")
+        except asyncio.TimeoutError:
+            _LOGGER.warning("La tâche MQTT Cloud Beem n'a pas répondu à l'annulation dans les temps.")
+        except Exception as e:
+            _LOGGER.error("Erreur inattendue en attendant l'arrêt de la tâche MQTT: %s", e)
     
     _LOGGER.info("<<< Déchargement des entités Beem (sensor) terminé (OK=%s)", unload_ok)
     return unload_ok
