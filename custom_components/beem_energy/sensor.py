@@ -3,6 +3,7 @@
 import logging
 import json
 import re
+import math
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
 import asyncio
@@ -105,12 +106,12 @@ def _decode_payload_bytes(b):
 def _to_float(x):
     try:
         v = float(x)
-        if not (v == v):
-            return None
-        if v in (float("inf"), float("-inf")):
+        # Utilise les fonctions dédiées et plus lisibles du module math
+        if math.isnan(v) or math.isinf(v):
             return None
         return v
-    except Exception:
+    except (ValueError, TypeError):
+        # On ne capture que les erreurs de conversion attendues
         return None
 
 def _parse_payload_dt(value):
@@ -173,8 +174,13 @@ def _candidate_keys_for_mqtt(logical_key: str):
         for mqtt_key, mapped in SENSOR_KEY_MAP.items():
             if mapped == lk and mqtt_key not in cands:
                 cands.append(mqtt_key)
-    except Exception:
-        pass
+    except Exception as e:
+        _LOGGER.debug(
+            "Erreur lors de la recherche de clés candidates pour '%s' dans SENSOR_KEY_MAP: %s",
+            lk,
+            e,
+            exc_info=True
+        )
     sp = _CAMEL_SPECIAL.get(lk)
     if sp and sp not in cands:
         cands.append(sp)
@@ -236,8 +242,13 @@ def _init_es_alias_map():
             _ES_ALIAS_MAP[str(key_canon).lower()] = str(key_canon)
             for a in meta.get("aliases", []):
                 _ES_ALIAS_MAP[str(a).lower()] = str(key_canon)
-    except Exception:
-        pass
+    except Exception as e:
+        _LOGGER.error(
+            "Impossible d'initialiser la carte des alias pour l'EnergySwitch. "
+            "Les capteurs associés risquent de ne pas fonctionner. Erreur: %s",
+            e,
+            exc_info=True
+        )
 _init_es_alias_map()
 
 _ES_SYNONYMS_READ: Dict[str, list[str]] = {
@@ -401,7 +412,10 @@ async def async_setup_entry(
             coordinator_local = hass.data[DOMAIN][entry.entry_id].get("coordinator")
             if coordinator_local and hasattr(coordinator_local, "data"):
                 _add(coordinator_local.data.get("energyswitch_serial") or coordinator_local.data.get("energy_switch_serial"))
-        except Exception: pass
+        except Exception as e:
+            _LOGGER.debug(
+                "N'a pas pu récupérer le serial de l'EnergySwitch depuis le coordinateur (peut être normal au démarrage) : %s", e
+            )
         return { _serial_for_topic(s) for s in serials_raw if s }
 
     def _get_es_buf(es_serial: str) -> MqttBatteryBuffer:
@@ -682,7 +696,13 @@ async def async_setup_entry(
                                 res = fn(serial)
                                 if asyncio.iscoroutine(res): await res
                                 break
-                            except Exception: pass
+                            except Exception as e:
+                                _LOGGER.debug(
+                                    "La tentative de relance du streaming via '%s' pour le serial %s a échoué : %s",
+                                    attr,
+                                    serial,
+                                    e
+                                )
             stale_store = hass.data[DOMAIN][entry.entry_id].setdefault("stale_counts", {})
             for serial, buf in list(mqtt_buffers.items()):
                 fresh = buf.is_fresh()
@@ -696,7 +716,12 @@ async def async_setup_entry(
                         _LOGGER.debug("Échec de la demande de refresh REST global: %s", e)
 
                     stale_store[serial] = 0
-        except Exception: pass
+        except Exception as e:
+            _LOGGER.warning(
+                "Erreur inattendue dans la tâche de surveillance de la fraîcheur MQTT (_tick_availability): %s",
+                e,
+                exc_info=True
+            )
 
     async def _poll_es_once(_now=None, entry=None):
         if not entry or not hass.data.get(DOMAIN, {}).get(entry.entry_id):
@@ -811,8 +836,11 @@ class BeemMqttOrRestSensor(SensorEntity):
                 self._attr_device_class = meta[2]
             if isinstance(meta, tuple) and len(meta) >= 4 and meta[3]:
                 self._attr_state_class = meta[3]
-        except Exception:
-            pass
+        except Exception as e:
+                _LOGGER.debug(
+                    "Impossible de définir device_class/state_class pour le capteur %s : %s",
+                    self._attr_unique_id, e
+                )
 
     async def async_added_to_hass(self):
         self._unsub_dispatcher = async_dispatcher_connect(
@@ -881,8 +909,8 @@ class BeemMqttOrRestSensor(SensorEntity):
         try:
             if getattr(self._mqtt_buffer, "_data", None):
                 keys = list(self._mqtt_buffer._data.keys())
-        except Exception:
-            pass
+        except Exception as e:
+            _LOGGER.debug("Erreur lors de la récupération des clés du buffer pour %s: %s", self._attr_unique_id, e)
         return {
             "prefer_mqtt": bool(self._prefer_mqtt),
             "debug_source": self._debug_source,
@@ -990,8 +1018,8 @@ class BeemDerivedSensor(SensorEntity):
         try:
             if getattr(self._mqtt_buffer, "_data", None):
                 keys = list(self._mqtt_buffer._data.keys())
-        except Exception:
-            pass
+        except Exception as e:
+            _LOGGER.debug("Erreur lors de la récupération des clés du buffer pour %s: %s", self._attr_unique_id, e)
         return {
             "prefer_mqtt": True,
             "debug_mqtt_key": self._debug_last_mqtt_key,
@@ -1151,8 +1179,11 @@ class BeemMqttDebugSensor(SensorEntity):
                 attrs[safe_key] = val
                 if isinstance(ts, datetime):
                     attrs[f"{safe_key}__ts"] = ts.isoformat()
-        except Exception:
-            pass
+        except Exception as e:
+                    _LOGGER.debug(
+                        "Erreur lors de la construction des attributs pour le capteur de débogage %s: %s",
+                        self._attr_unique_id, e
+                    )
         return attrs
 
     @property
@@ -1323,8 +1354,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     for u in unsubs:
         try:
             u()
-        except Exception:
-            pass
+        except Exception as e:
+                    _LOGGER.warning(
+                        "Erreur lors du désabonnement d'un topic MQTT pendant le déchargement : %s", e
+                    )
 
     task_bat = entry_data.get("beem_cloud_task_battery")
     if task_bat:
