@@ -66,6 +66,12 @@ jobs:
             echo "changes=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: "Configure Git identity"
+        if: steps.changes.outputs.changes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: "Create auto-fix branch and commit"
         if: steps.changes.outputs.changes == 'true'
         run: |
