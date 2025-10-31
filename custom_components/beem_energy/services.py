@@ -56,7 +56,7 @@ async def async_export_to_csv(hass: HomeAssistant, service_call: ServiceCall):
     """Service pour exporter les données historiques en CSV standard."""
     start_date = service_call.data["start_date"]
     end_date = service_call.data["end_date"]
-    device_ids = service_call.data.get("device_id", [])
+    device_ids = service_call.data.get("device") or service_call.data.get("device_id") or []
     if not isinstance(device_ids, list): device_ids = [device_ids]
     if not device_ids:
         _LOGGER.error("Aucun appareil n'a été ciblé pour l'exportation.")
@@ -123,7 +123,7 @@ async def async_export_to_csv(hass: HomeAssistant, service_call: ServiceCall):
 async def async_export_for_import(hass: HomeAssistant, service_call: ServiceCall):
     """Service pour exporter les données dans un format cumulatif générique."""
     start_date, end_date = service_call.data["start_date"], service_call.data["end_date"]
-    device_ids = service_call.data.get("device_id", [])
+    device_ids = service_call.data.get("device") or service_call.data.get("device_id") or []
     if not isinstance(device_ids, list): device_ids = [device_ids]
     if not device_ids:
         _LOGGER.error("Aucun appareil n'a été ciblé.")
@@ -197,7 +197,7 @@ async def async_export_for_import(hass: HomeAssistant, service_call: ServiceCall
 async def async_export_for_ha_import(hass: HomeAssistant, service_call: ServiceCall):
     """Exporte les données en utilisant les entity_id des capteurs existants."""
     start_date, end_date = service_call.data["start_date"], service_call.data["end_date"]
-    device_ids = service_call.data.get("device_id", [])
+    device_ids = service_call.data.get("device") or service_call.data.get("device_id") or []
     if not isinstance(device_ids, list): device_ids = [device_ids]
     if not device_ids:
         _LOGGER.error("Aucun appareil n'a été ciblé.")
