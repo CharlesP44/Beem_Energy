@@ -3,10 +3,14 @@
 export_to_csv:
   name: Exporter les données en CSV (Standard)
   description: "Exporte une plage de données historiques dans des fichiers CSV bruts."
-  target:
-    device:
-      integration: beem_energy
   fields:
+    device:
+      name: Appareil Beem
+      description: "Sélectionnez l’appareil Beem à exporter."
+      required: true
+      selector:
+        device:
+          integration: beem_energy
     start_date:
       name: Date de début
       description: "La première journée à inclure dans l'export."
@@ -23,10 +27,14 @@ export_to_csv:
 export_for_import:
   name: Exporter pour importation (Générique)
   description: "Exporte les données dans un format CSV cumulatif avec un ID de statistique générique (beem_energy:...). Utile pour des outils externes."
-  target:
-    device:
-      integration: beem_energy
   fields:
+    device:
+      name: Appareil Beem
+      description: "Sélectionnez l’appareil Beem à exporter."
+      required: true
+      selector:
+        device:
+          integration: beem_energy
     start_date:
       name: Date de début
       required: true
@@ -41,10 +49,14 @@ export_for_import:
 export_for_ha_import:
   name: Exporter pour réimportation HA (Avancé)
   description: "Exporte les données en utilisant les IDs des capteurs existants. ATTENTION : Pour utilisateurs avancés voulant remplir l'historique de capteurs spécifiques."
-  target:
-    device:
-      integration: beem_energy
   fields:
+    device:
+      name: Appareil Beem
+      description: "Sélectionnez l’appareil Beem à exporter."
+      required: true
+      selector:
+        device:
+          integration: beem_energy
     start_date:
       name: Date de début
       required: true
