@@ -1,0 +1,69 @@
+# Copyright (c) 2025 Charles P44
+# SPDX-License-Identifier: MIT
+export_to_csv:
+  name: Exporter les données en CSV (Standard)
+  description: "Exporte une plage de données historiques dans des fichiers CSV bruts."
+  fields:
+    device:
+      name: Appareil Beem
+      description: "Sélectionnez l’appareil Beem à exporter."
+      required: true
+      selector:
+        device:
+          integration: beem_energy
+    start_date:
+      name: Date de début
+      description: "La première journée à inclure dans l'export."
+      required: true
+      selector:
+        date: {}
+    end_date:
+      name: Date de fin
+      description: "La dernière journée à inclure dans l'export."
+      required: true
+      selector:
+        date: {}
+
+export_for_import:
+  name: Exporter pour importation (Générique)
+  description: "Exporte les données dans un format CSV cumulatif avec un ID de statistique générique (beem_energy:...). Utile pour des outils externes."
+  fields:
+    device:
+      name: Appareil Beem
+      description: "Sélectionnez l’appareil Beem à exporter."
+      required: true
+      selector:
+        device:
+          integration: beem_energy
+    start_date:
+      name: Date de début
+      required: true
+      selector:
+        date: {}
+    end_date:
+      name: Date de fin
+      required: true
+      selector:
+        date: {}
+
+export_for_ha_import:
+  name: Exporter pour réimportation HA (Avancé)
+  description: "Exporte les données en utilisant les IDs des capteurs existants. ATTENTION : Pour utilisateurs avancés voulant remplir l'historique de capteurs spécifiques."
+  fields:
+    device:
+      name: Appareil Beem
+      description: "Sélectionnez l’appareil Beem à exporter."
+      required: true
+      selector:
+        device:
+          integration: beem_energy
+    start_date:
+      name: Date de début
+      required: true
+      selector:
+        date: {}
+    end_date:
+      name: Date de fin
+      required: true
+      selector:
+        date: {}

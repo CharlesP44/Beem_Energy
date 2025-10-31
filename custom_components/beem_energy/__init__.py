@@ -9,22 +9,21 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.typing import ConfigType
 from aiomqtt import Client, ProtocolVersion
+from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN, PLATFORMS
 from .beem_api import get_tokens, get_devices
 from .coordinator import get_beem_coordinator
 from .exceptions import BeemConnectionError
-from homeassistant.helpers import config_validation as cv
+from . import services
 
 CONFIG_SCHEMA = cv.empty_config_schema("beem_energy")
 
 _LOGGER = logging.getLogger(__name__)
 
-
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Initialisation globale, vide ici."""
     return True
-
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Initialisation d'une entrée de configuration."""
@@ -67,7 +66,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady("Erreur d'authentification (temporaire ?).")
 
     try:
-
         def make_ssl_context():
             ctx = ssl.create_default_context()
             ctx.check_hostname = True
@@ -84,8 +82,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             transport="websockets",
             protocol=ProtocolVersion.V5,
             identifier=client_id,
+            keepalive=45,
         )
-
     except Exception as err:
         _LOGGER.error("Échec de la connexion MQTT à Beem: %s", err)
         raise ConfigEntryNotReady from err
@@ -118,19 +116,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug(
         "[INIT] Entry %s : batteries=%s, energyswitch=%s, user_id=%s",
         entry.entry_id,
-        batteries,
+        [b.get("serialNumber") for b in batteries],
         energyswitch_serial,
         user_id,
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    services.async_register_services(hass)
+
     _LOGGER.info("[INIT] Setup_entry terminé pour %s.", entry.entry_id)
     return True
+
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Nettoyage à la suppression de l'intégration."""
     _LOGGER.info("Déchargement de l'intégration Beem Energy pour %s", entry.entry_id)
+
+    services.async_unload_services(hass)
 
     platforms_unloaded = await hass.config_entries.async_unload_platforms(
         entry, PLATFORMS
