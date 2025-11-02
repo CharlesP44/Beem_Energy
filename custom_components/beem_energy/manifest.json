@@ -1,12 +1,13 @@
 {
   "domain": "beem_energy",
   "name": "Beem Energy",
+  "after_dependencies": ["recorder"],
   "codeowners": ["@CharlesP44"],
   "config_flow": true,
   "dependencies": ["mqtt"],
   "documentation": "https://github.com/CharlesP44/Beem_Energy",
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/CharlesP44/Beem_Energy/issues",
-  "requirements": ["aiomqtt>=1.1.0"],
-  "version": "2025.10.26"
+  "requirements": ["aiomqtt>=1.1.0", "pandas>=2.0.0", "pytz"],
+  "version": "2025.11.03"
 }
