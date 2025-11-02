@@ -68,6 +68,7 @@ async def _notify_rate_limit(hass, title: str, message: str) -> None:
             "Impossible de créer la notification persistante '%s'. Erreur: %s", title, e
         )
 
+
 async def try_login(email: str, password: str) -> dict:
     """Test de login simple (non utilisé par l’intégration en routine)."""
     login_url = f"{BASE_URL}/user/login"
