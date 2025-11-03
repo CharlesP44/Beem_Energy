@@ -7,6 +7,7 @@ from homeassistant.config_entries import ConfigEntry
 
 from .const import DOMAIN
 
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> Dict[str, Any]:
@@ -65,7 +66,7 @@ async def async_get_config_entry_diagnostics(
 
             mqtt_buffers = hass.data[DOMAIN][entry.entry_id].get("mqtt_buffers", {})
             current_buffer = mqtt_buffers.get(serial.lower())
-            if current_buffer and hasattr(current_buffer, '_data'):
+            if current_buffer and hasattr(current_buffer, "_data"):
                 buffer_diag = {k: v[0] for k, v in current_buffer._data.items()}
             else:
                 buffer_diag = {}
