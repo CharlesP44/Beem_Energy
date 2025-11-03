@@ -7,7 +7,6 @@ import aiohttp
 import asyncio
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-from functools import partial
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -32,10 +31,10 @@ SERVICE_EXPORT_FOR_HA_IMPORT = "export_for_ha_import"
 
 BASE_SERVICE_SCHEMA = vol.Schema(
     {
+        vol.Required("device"): cv.string,
         vol.Required("start_date"): cv.date,
         vol.Required("end_date"): cv.date,
-    },
-    extra=vol.ALLOW_EXTRA,
+    }
 )
 
 
@@ -66,14 +65,13 @@ def _write_csv_sync(file_path: str, all_rows: list[dict], fieldnames: list[str])
 
 
 # --- Logique des services ---
-
-
-async def async_export_to_csv(hass: HomeAssistant, service_call: ServiceCall):
+async def async_export_to_csv(service_call: ServiceCall):
     """Service pour exporter les données historiques en CSV standard."""
+    hass = service_call.hass
     start_date = service_call.data["start_date"]
     end_date = service_call.data["end_date"]
 
-    device_ids = service_call.data.get("device_id", [])
+    device_ids = service_call.data.get("device", [])
     if not isinstance(device_ids, list):
         device_ids = [device_ids]
     if not device_ids:
@@ -106,7 +104,7 @@ async def async_export_to_csv(hass: HomeAssistant, service_call: ServiceCall):
             _LOGGER.warning("Aucun ID de batterie pour le compte %s.", entry_id)
 
         API_URLS = _build_api_urls(battery_id)
-        CSV_DIR = "/config/www/beem_exports"
+        CSV_DIR = f"{hass.config.config_dir}/www/beem_exports"
         start_dt = dt_util.as_local(datetime.combine(start_date, datetime.min.time()))
         end_dt = dt_util.as_local(
             datetime.combine(end_date + timedelta(days=1), datetime.min.time())
@@ -171,9 +169,7 @@ async def async_export_to_csv(hass: HomeAssistant, service_call: ServiceCall):
                             f"   → Erreur lors de la récupération du chunk pour {api_name}: {e}"
                         )
                     cur_from = cur_to
-                    await asyncio.sleep(
-                        API_DELAY
-                    )
+                    await asyncio.sleep(API_DELAY)
 
                 if all_rows:
                     entry_title = (
@@ -201,7 +197,7 @@ async def async_export_to_csv(hass: HomeAssistant, service_call: ServiceCall):
                         f"✅ Fichier exporté : /local/beem_exports/{filename} ({len(all_rows)} lignes)"
                     )
                 else:
-                    _LOGGER.warning(f"Aucune donnée à exporter pour {api_name}")
+                    _LOGGER.info(f"Aucune donnée à exporter pour {api_name}")
 
     await hass.services.async_call(
         "persistent_notification",
@@ -210,13 +206,14 @@ async def async_export_to_csv(hass: HomeAssistant, service_call: ServiceCall):
     )
 
 
-async def async_export_for_import(hass: HomeAssistant, service_call: ServiceCall):
+async def async_export_for_import(service_call: ServiceCall):
     """Service pour exporter les données dans un format cumulatif générique."""
+    hass = service_call.hass
     start_date, end_date = (
         service_call.data["start_date"],
         service_call.data["end_date"],
     )
-    device_ids = service_call.data.get("device_id", [])
+    device_ids = service_call.data.get("device", [])
     if not isinstance(device_ids, list):
         device_ids = [device_ids]
     if not device_ids:
@@ -246,7 +243,7 @@ async def async_export_for_import(hass: HomeAssistant, service_call: ServiceCall
         battery_id = coordinator.data.get("battery", {}).get("id")
 
         API_URLS = _build_api_urls(battery_id)
-        CSV_DIR = "/config/www/beem_exports"
+        CSV_DIR = f"{hass.config.config_dir}/www/beem_exports"
         start_dt = dt_util.as_local(datetime.combine(start_date, datetime.min.time()))
         end_dt = dt_util.as_local(
             datetime.combine(end_date + timedelta(days=1), datetime.min.time())
@@ -296,9 +293,7 @@ async def async_export_for_import(hass: HomeAssistant, service_call: ServiceCall
                     except Exception as e:
                         _LOGGER.error(f"Erreur de chunk pour {api_name}: {e}")
                     cur_from = cur_to
-                    await asyncio.sleep(
-                        API_DELAY
-                    )
+                    await asyncio.sleep(API_DELAY)
                 if not raw_measures:
                     _LOGGER.info(
                         f"Aucune donnée trouvée pour {api_name} sur cette période, fichier non créé."
@@ -369,13 +364,14 @@ async def async_export_for_import(hass: HomeAssistant, service_call: ServiceCall
     )
 
 
-async def async_export_for_ha_import(hass: HomeAssistant, service_call: ServiceCall):
+async def async_export_for_ha_import(service_call: ServiceCall):
     """Exporte les données en utilisant les entity_id des capteurs existants."""
+    hass = service_call.hass
     start_date, end_date = (
         service_call.data["start_date"],
         service_call.data["end_date"],
     )
-    device_ids = service_call.data.get("device_id", [])
+    device_ids = service_call.data.get("device", [])
     if not isinstance(device_ids, list):
         device_ids = [device_ids]
     if not device_ids:
@@ -421,7 +417,7 @@ async def async_export_for_ha_import(hass: HomeAssistant, service_call: ServiceC
             "battery_charged": ("batteryPower", "charging"),
         }
         API_URLS = _build_api_urls(battery_id)
-        CSV_DIR = "/config/www/beem_exports"
+        CSV_DIR = f"{hass.config.config_dir}/www/beem_exports"
 
         start_dt = dt_util.as_local(datetime.combine(start_date, datetime.min.time()))
         end_dt = dt_util.as_local(
@@ -489,9 +485,7 @@ async def async_export_for_ha_import(hass: HomeAssistant, service_call: ServiceC
                     except Exception as e:
                         _LOGGER.error(f"Erreur de chunk pour {api_name}: {e}")
                     cur_from = cur_to
-                    await asyncio.sleep(
-                        API_DELAY
-                    )
+                    await asyncio.sleep(API_DELAY)
                 if not raw_measures:
                     _LOGGER.info(
                         f"Aucune donnée trouvée pour {api_name} sur cette période, fichier non créé."
@@ -555,22 +549,23 @@ async def async_export_for_ha_import(hass: HomeAssistant, service_call: ServiceC
 
 # --- Fonctions d'enregistrement et de déchargement ---
 def async_register_export_services(hass: HomeAssistant, entry: ConfigEntry):
+    """Registers the export services."""
     hass.services.async_register(
         DOMAIN,
         SERVICE_EXPORT_CSV,
-        partial(async_export_to_csv, hass),
+        async_export_to_csv,
         schema=BASE_SERVICE_SCHEMA,
     )
     hass.services.async_register(
         DOMAIN,
         SERVICE_EXPORT_FOR_IMPORT,
-        partial(async_export_for_import, hass),
+        async_export_for_import,
         schema=BASE_SERVICE_SCHEMA,
     )
     hass.services.async_register(
         DOMAIN,
         SERVICE_EXPORT_FOR_HA_IMPORT,
-        partial(async_export_for_ha_import, hass),
+        async_export_for_ha_import,
         schema=BASE_SERVICE_SCHEMA,
     )
 
