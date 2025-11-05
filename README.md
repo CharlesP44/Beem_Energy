@@ -4,6 +4,7 @@ Intégration non officielle permettant de connecter l'ensemble de vos équipemen
 
 Suivez votre production solaire, l'état de votre batterie et votre consommation en temps réel.
 
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-donate-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/charlesp44)
 [![Buy Me a Coffee](https://img.shields.io/badge/buymeacoffee-donate-yellow.svg?logo=buymeacoffee)](https://www.buymeacoffee.com/CharlesP44) [![HACS Validation](https://github.com/CharlesP44/Beem_Energy/actions/workflows/hacs.yml/badge.svg)](https://github.com/CharlesP44/Beem_Energy/actions/workflows/hacs.yml) [![HassFest Validation](https://github.com/CharlesP44/Beem_Energy/actions/workflows/hassfest.yml/badge.svg)](https://github.com/CharlesP44/Beem_Energy/actions/workflows/hassfest.yml)
 
 
@@ -65,6 +66,8 @@ Un grand merci à la communauté **HACF** (Home Assistant Communauté Francophon
 ## ☕ Soutien
 
 Si vous appréciez cette intégration et souhaitez soutenir son développement, vous pouvez m'offrir un café ! Votre soutien est grandement apprécié.
+
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-donate-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/charlesp44)
 
 [![Buy Me a Coffee](https://img.shields.io/badge/buymeacoffee-donate-yellow.svg?logo=buymeacoffee)](https://www.buymeacoffee.com/CharlesP44)
 
