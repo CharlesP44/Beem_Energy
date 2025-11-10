@@ -36,7 +36,6 @@ from .const import (
     ENERGYSWITCH_SENSORS,
     SENSOR_KEY_MAP,
     ENABLE_ES_POLLING,
-    # BASE_URL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -80,12 +79,10 @@ REST_TO_SNAKE = {
 
 
 def _serial_for_uid(s: Optional[str]) -> str:
-    """Forme canonique pour unique_id / clés internes: minuscule."""
     return "" if s is None else str(s).strip().lower()
 
 
 def _serial_for_topic(s: Optional[str]) -> str:
-    """Forme exacte pour les topics Cloud Beem: MAJUSCULE."""
     return "" if s is None else str(s).strip().upper()
 
 
@@ -305,7 +302,6 @@ _ES_SYNONYMS_READ: Dict[str, list[str]] = {
 
 
 def _es_candidate_keys_for_read(logical_key: str) -> list[str]:
-    """Retourne les clés possibles pour une entité ES donnée (canon + alias + synonymes)."""
     lk = str(logical_key).lower().replace("-", "_").strip("_")
     canon = _ES_ALIAS_MAP.get(lk, lk)
     cands: list[str] = []
@@ -951,130 +947,90 @@ async def async_setup_entry(
         )
         async_dispatcher_send(hass, f"{SIGNAL_BEEM_BATTERY_UPDATE}_{serial}")
 
-    def _make_es_cb(es_serial_uid: str):
-        async def _es_cb(msg):
-            topic = str(msg.topic)
-            payload = _decode_payload_bytes(msg.payload)
-            if payload is None:
-                _LOGGER.debug("[MQTT][brain] payload illisible sur %s", topic)
-                return
-            _LOGGER.debug("[MQTT][brain][HA] Reçu topic=%s payload=%s", topic, payload)
-            try:
-                if topic.endswith("/online"):
-                    if hass.data.get(DOMAIN, {}).get(entry.entry_id):
-                        hass.data[DOMAIN][entry.entry_id].setdefault("brain_state", {})[
-                            es_serial_uid
-                        ] = payload
-                        async_dispatcher_send(
-                            hass, f"{SIGNAL_BEEM_ES_UPDATE}_{es_serial_uid}"
-                        )
-                    return
-                if isinstance(payload, dict):
-                    if "result" in payload:
-                        _handle_result_payload(es_serial_uid, payload)
-                    elif "method" in payload:
-                        _handle_events_rpc(es_serial_uid, topic, payload)
-                    else:
-                        _LOGGER.debug(
-                            "[MQTT][brain][HA] Payload dict non traité sur %s", topic
-                        )
-                else:
-                    _LOGGER.info(
-                        "[MQTT][brain][HA] Payload non-dict (peut-être un écho de /command) sur %s: %s",
-                        topic,
-                        payload,
-                    )
-                    if hass.data.get(DOMAIN, {}).get(entry.entry_id):
-                        hass.data[DOMAIN][entry.entry_id].setdefault("brain_state", {})[
-                            es_serial_uid
-                        ] = payload
-                        async_dispatcher_send(
-                            hass, f"{SIGNAL_BEEM_ES_UPDATE}_{es_serial_uid}"
-                        )
-            except KeyError as e:
-                _LOGGER.debug(
-                    "[MQTT][brain][HA] Entry dict manquant (%s), message ignoré.", e
-                )
-            except Exception as e:
-                _LOGGER.warning("[MQTT][brain][HA] parsing error on %s: %s", topic, e)
-
-        return _es_cb
-
     async def _subscribe_via_ha_mqtt():
-        """S’abonne via le broker HA aux topics EnergySwitch nécessaires (lower + UPPER)."""
-        serials_upper = sorted(_resolve_energy_switch_serials())
-        if not serials_upper:
-            _LOGGER.info(
-                "Aucun numéro de série EnergySwitch fourni → pas d’abonnement."
-            )
-            return
+        """
+        Gère les abonnements MQTT locaux pour l'EnergySwitch.
 
-        unsubs = hass.data[DOMAIN][entry.entry_id]["mqtt_unsubs"]
-        subs = []
-        for es_u in serials_upper:
-            es_l = _serial_for_uid(es_u)
-            if not es_l:
-                continue
-            topics_ha = {
-                f"brain/{es_l}",
-                f"brain/{es_l}/online",
-                f"brain/{es_l}/rpc",
-                f"brain/{es_l}/events/#",
-                f"brain/{es_l}/+/rpc",
-                f"brain/{es_l}/+",
-                #                f"brain/{es_u}", f"brain/{es_u}/online", f"brain/{es_u}/rpc", f"brain/{es_u}/events/#",
-                #                f"brain/{es_u}/+/rpc", f"brain/{es_u}/+",
-            }
-            for t in topics_ha:
-                seen = hass.data[DOMAIN][entry.entry_id]["ha_mqtt_subscribed"]
-                if t in seen:
-                    continue
-                unsubs.append(
-                    await ha_mqtt.async_subscribe(hass, t, _make_es_cb(es_l), qos=0)
-                )
-                seen.add(t)
-                subs.append(t)
-                _LOGGER.info("✅ Abonné MQTT EnergySwitch (HA) : %s", t)
-        _LOGGER.info("📋 Topics MQTT (HA) effectivement abonnés : %s", subs)
+        NOTE: Cette fonction est intentionnellement laissée vide car
+        l'EnergySwitch communique via le client MQTT Cloud unifié.
+        Garder cette fonction vide évite des abonnements locaux.
+        """
+        _LOGGER.info(
+            "[MQTT][HA] Abonnements locaux pour l'EnergySwitch ignorés (gérés via le client Cloud)."
+        )
+        return
 
-    async def _start_beem_cloud_battery_listener():
+    async def _start_beem_cloud_listener():
         if not mqtt_client:
-            _LOGGER.warning(
-                "[MQTT][battery][Cloud] Aucun mqtt_client Cloud Beem disponible."
-            )
+            _LOGGER.warning("[MQTT][Cloud] Aucun mqtt_client Cloud Beem disponible.")
             return
+
+        all_topics = set()
+
         battery_topics = {
             f"battery/{_serial_for_topic(s)}/sys/streaming"
             for s in battery_serials
             if s
         }
-        if not battery_topics:
-            _LOGGER.info("[MQTT][battery][Cloud] Aucun topic batterie à écouter.")
+        all_topics.update(battery_topics)
+
+        es_serials = _resolve_energy_switch_serials()
+        for es_serial in es_serials:
+            all_topics.add(f"brain/{es_serial.lower()}/#")
+
+        if not all_topics:
+            _LOGGER.info("[MQTT][Cloud] Aucun topic (batterie ou brain) à écouter.")
             return
+
         while True:
             try:
                 async with mqtt_client:
                     hass.data[DOMAIN][entry.entry_id]["cloud_mqtt_connected"] = True
                     _LOGGER.info(
-                        "[MQTT][battery][Cloud] Connexion établie. Abonnement aux topics batterie..."
+                        "[MQTT][Cloud] Connexion établie. Abonnement aux topics unifiés..."
                     )
-                    for t in sorted(list(battery_topics)):
+                    for t in sorted(list(all_topics)):
                         await mqtt_client.subscribe(t)
                         _LOGGER.info("✅ Abonné Cloud : %s", t)
+
                     async for message in mqtt_client.messages:
                         topic_str = str(message.topic)
-                        serial_uid = _serial_for_uid(topic_str.split("/")[1])
-                        payload = _decode_payload_bytes(message.payload)
-                        _ingest_battery_payload(serial_uid, topic_str, payload)
+                        payload_bytes = message.payload
+
+                        if topic_str.startswith("battery/"):
+                            serial_uid = _serial_for_uid(topic_str.split("/")[1])
+                            payload = _decode_payload_bytes(payload_bytes)
+                            _ingest_battery_payload(serial_uid, topic_str, payload)
+
+                        elif topic_str.startswith("brain/"):
+                            serial_uid = _serial_for_uid(topic_str.split("/")[1])
+                            payload = _decode_payload_bytes(payload_bytes)
+                            _LOGGER.debug(
+                                "[MQTT][brain][Cloud] Reçu topic=%s payload=%s",
+                                topic_str,
+                                payload,
+                            )
+
+                            if isinstance(payload, dict):
+                                if "result" in payload:
+                                    _handle_result_payload(serial_uid, payload)
+                                elif "method" in payload:
+                                    _handle_events_rpc(serial_uid, topic_str, payload)
+                            elif topic_str.endswith("/online"):
+                                if hass.data.get(DOMAIN, {}).get(entry.entry_id):
+                                    hass.data[DOMAIN][entry.entry_id].setdefault(
+                                        "brain_state", {}
+                                    )[serial_uid] = payload
+                                    async_dispatcher_send(
+                                        hass, f"{SIGNAL_BEEM_ES_UPDATE}_{serial_uid}"
+                                    )
 
             except asyncio.CancelledError:
-                _LOGGER.info(
-                    "[MQTT][battery][Cloud] Listener batterie annulé (unload)."
-                )
+                _LOGGER.info("[MQTT][Cloud] Listener unifié annulé (unload).")
                 break
             except Exception as e:
                 _LOGGER.warning(
-                    "[MQTT][battery][Cloud] Listener batterie interrompu (%s). Reconnexion dans 15s…",
+                    "[MQTT][Cloud] Listener unifié interrompu (%s). Reconnexion dans 15s…",
                     repr(e),
                 )
             finally:
@@ -1230,8 +1186,8 @@ async def async_setup_entry(
         await _subscribe_via_ha_mqtt()
         if mqtt_client:
             task_bat = hass.async_create_task(
-                _start_beem_cloud_battery_listener(),
-                name=f"{DOMAIN}_beem_cloud_battery_{entry.entry_id}",
+                _start_beem_cloud_listener(),
+                name=f"{DOMAIN}_beem_cloud_listener_{entry.entry_id}",
             )
             hass.data[DOMAIN][entry.entry_id]["beem_cloud_task_battery"] = task_bat
         else:
@@ -1259,10 +1215,28 @@ async def async_setup_entry(
             )
         coordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")
         if coordinator:
-            cancel_keepalive = async_track_time_interval(
-                hass, coordinator.async_keepalive, timedelta(minutes=5)
+            # Keep-alive pour la batterie (via REST)
+            _LOGGER.info(
+                "Activation du keep-alive REST (Batterie) toutes les 2 minutes."
             )
-            hass.data[DOMAIN][entry.entry_id]["timed_tasks"].append(cancel_keepalive)
+            cancel_battery_keepalive = async_track_time_interval(
+                hass, coordinator.async_keepalive, timedelta(minutes=2)
+            )
+            hass.data[DOMAIN][entry.entry_id]["timed_tasks"].append(
+                cancel_battery_keepalive
+            )
+
+            # Keep-alive pour l'EnergySwitch (via REST)
+            if coordinator.es_serial:
+                _LOGGER.info(
+                    "Activation du keep-alive REST (EnergySwitch) toutes les 2 minutes."
+                )
+                cancel_es_keepalive = async_track_time_interval(
+                    hass, coordinator.async_keepalive_es, timedelta(minutes=2)
+                )
+                hass.data[DOMAIN][entry.entry_id]["timed_tasks"].append(
+                    cancel_es_keepalive
+                )
 
     # --- DÉMARRAGE DES TÂCHES ---
     if hass.state == CoreState.running:
@@ -1661,8 +1635,6 @@ class BeemMqttLastUpdateSensor(SensorEntity):
 
 
 class BeemMqttDebugSensor(SensorEntity):
-    """Expose tout le contenu du buffer MQTT d'une batterie."""
-
     def __init__(self, serial, mqtt_buffer):
         self._serial = _serial_for_uid(serial)
         self._mqtt_buffer = mqtt_buffer
@@ -1760,8 +1732,6 @@ class SolarEquipmentSensor(SensorEntity):
 
 
 class BeemBoxSensor(SensorEntity):
-    """Représente un capteur pour une BeemBox."""
-
     SENSOR_TYPES = {
         "power": {
             "key": "wattHour",
@@ -1825,7 +1795,6 @@ class BeemBoxSensor(SensorEntity):
 
     @property
     def native_value(self):
-        """Retourne la valeur du capteur."""
         summary_data = self.coordinator.data.get("beemboxes_summary_by_id", {}).get(
             self._box_id
         )
@@ -1844,7 +1813,6 @@ class BeemBoxSensor(SensorEntity):
 
     @property
     def available(self) -> bool:
-        """Retourne True si le summary est disponible pour cette box."""
         return (
             self.coordinator.data.get("beemboxes_summary_by_id", {}).get(self._box_id)
             is not None
@@ -1852,7 +1820,6 @@ class BeemBoxSensor(SensorEntity):
 
     @property
     def device_info(self):
-        """Retourne les informations de l'appareil."""
         box_info = self.coordinator.data.get("beemboxes_by_id", {}).get(self._box_id)
         device_name = f"BeemBox {self._box_id}"
         if box_info and box_info.get("name"):
@@ -1960,6 +1927,10 @@ class BeemEnergySwitchSensor(RestoreEntity, SensorEntity):
 
         self._unsub_dispatcher = None
 
+        self._last_update_utc = None
+        self._last_update_source = "init"
+        self._last_successful_key = None
+
     async def async_added_to_hass(self):
         last_state = await self.async_get_last_state()
         if last_state and last_state.state not in (None, "unknown", "unavailable"):
@@ -1987,16 +1958,44 @@ class BeemEnergySwitchSensor(RestoreEntity, SensorEntity):
     def native_value(self):
         for k in _es_candidate_keys_for_read(self._logical_key):
             buffer_key = f"ch{self._channel}_{_clean_key(self._serial, k)}"
-            raw, _ = self._mqtt_buffer.get(buffer_key)
+            raw, timestamp = self._mqtt_buffer.get(buffer_key)
+
             if raw is None:
                 continue
+
+            self._last_update_utc = (
+                timestamp.isoformat()
+                if timestamp
+                else datetime.now(timezone.utc).isoformat()
+            )
+            self._last_successful_key = k
+            self._last_update_source = "cloud_mqtt"
+
             try:
                 if isinstance(self._precision, int):
                     return round(float(raw), self._precision)
-            except Exception:
+            except (ValueError, TypeError):
                 return raw
             return raw
+
         return None
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        buffer_data = getattr(self._mqtt_buffer, "_data", {})
+        channel_keys = {
+            key.replace(f"ch{self._channel}_", ""): value[0]
+            for key, value in buffer_data.items()
+            if key.startswith(f"ch{self._channel}_")
+        }
+
+        return {
+            "last_update_utc": self._last_update_utc,
+            "last_update_source": self._last_update_source,
+            "last_successful_key": self._last_successful_key,
+            "channel": self._channel,
+            "buffer_channel_data": channel_keys,
+        }
 
     async def async_update(self):
         return
