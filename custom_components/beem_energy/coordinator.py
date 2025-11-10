@@ -48,6 +48,7 @@ class BeemCoordinator(DataUpdateCoordinator):
         self.token_rest = token_rest
         self.email = email
         self.password = password
+        self.es_id: int | None = None
 
         self.data: Dict[str, Any] = {}
         self.batteries_by_serial: Dict[str, Dict[str, Any]] = {}
@@ -137,6 +138,9 @@ class BeemCoordinator(DataUpdateCoordinator):
                 energyswitch_serial = (
                     energyswitches[0].get("serialNumber") if energyswitches else None
                 )
+                # Stocker l'ID de l'EnergySwitch pour le keep-alive
+                if energyswitches and energyswitches[0].get("id"):
+                    self.es_id = energyswitches[0].get("id")
 
                 if isinstance(energyswitch_serial, str) and energyswitch_serial.strip():
                     self.es_serial = energyswitch_serial.strip().upper()
@@ -351,6 +355,53 @@ class BeemCoordinator(DataUpdateCoordinator):
                 "[STREAMING] Erreur lors du maintien du flux pour %s: %s", serial, e
             )
             return False
+
+    async def async_keepalive_es(self, now=None):
+        """Initie ou maintient le flux de données MQTT pour l'EnergySwitch via l'endpoint data-stream."""
+        if not self.es_id or not self.token_rest:
+            _LOGGER.debug(
+                "[KEEP-ALIVE ES] Annulé (ID de l'EnergySwitch ou token REST manquant)."
+            )
+            return
+
+        _LOGGER.debug(
+            "[KEEP-ALIVE ES] Maintien du flux de données pour l'ID %s.", self.es_id
+        )
+
+        url = f"{BASE_URL}/energy-switches/{self.es_id}/data-stream"
+        headers = {
+            "Authorization": f"Bearer {self.token_rest}",
+            "Accept": "application/json",
+        }
+        client_id = f"ha-keepalive-es-{self.config_entry.entry_id}-{int(datetime.now(timezone.utc).timestamp())}"
+        params = {"clientId": client_id}
+
+        try:
+            async with aiohttp.ClientSession(headers=headers) as session:
+                async with session.post(url, params=params) as resp:
+                    if resp.status in (
+                        200,
+                        201,
+                    ):  # 200 OK ou 201 Created sont des succès
+                        _LOGGER.debug(
+                            "[KEEP-ALIVE ES] Maintien du flux réussi (status %d) pour l'ID %s.",
+                            resp.status,
+                            self.es_id,
+                        )
+                    else:
+                        _LOGGER.warning(
+                            "[KEEP-ALIVE ES] Échec du maintien du flux (status %d) pour l'ID %s.",
+                            resp.status,
+                            self.es_id,
+                        )
+                    await resp.text()
+        except Exception as e:
+            _LOGGER.error(
+                "[KEEP-ALIVE ES] Erreur inattendue lors du maintien du flux pour l'ID %s: %s",
+                self.es_id,
+                e,
+                exc_info=True,
+            )
 
 
 async def get_beem_coordinator(hass, config_entry, token_rest, email, password):
