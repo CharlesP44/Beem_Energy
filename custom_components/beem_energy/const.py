@@ -97,23 +97,23 @@ MQTT_ONLY_SENSORS = [
 # -------------------------------------------------------------------
 
 SENSOR_DEFINITIONS = {
-    "batteryPower": (UNIT_WATT, ICON_BATTERY),
-    "meterPower": (UNIT_WATT, ICON_POWER),
-    "solarPower": (UNIT_WATT, ICON_SOLAR),
-    "inverterPower": (UNIT_WATT, ICON_INVERTER),
-    "soc": (UNIT_PERCENT, ICON_CHARGE),
+    "batteryPower": (UNIT_WATT, ICON_BATTERY, DEVICE_CLASS_POWER, STATE_CLASS_MEASUREMENT),
+    "meterPower": (UNIT_WATT, ICON_POWER, DEVICE_CLASS_POWER, STATE_CLASS_MEASUREMENT),
+    "solarPower": (UNIT_WATT, ICON_SOLAR, DEVICE_CLASS_POWER, STATE_CLASS_MEASUREMENT),
+    "inverterPower": (UNIT_WATT, ICON_INVERTER, DEVICE_CLASS_POWER, STATE_CLASS_MEASUREMENT),
+    "soc": (UNIT_PERCENT, ICON_CHARGE, DEVICE_CLASS_BATTERY, STATE_CLASS_MEASUREMENT),
     "workingModeLabel": (None, "mdi:cog-outline"),
     "numberOfCycles": (None, "mdi:cog-clockwise"),
     "numberOfModules": (None, "mdi:battery-high"),
     "globalSoh": (UNIT_PERCENT, ICON_SOH),
-    "capacityInKwh": (UNIT_KILOWATT_HOUR, ICON_BATTERY),
+    "capacityInKwh": (UNIT_KILOWATT_HOUR, ICON_BATTERY, DEVICE_CLASS_ENERGY, None),
     "maxPower": (UNIT_WATT, ICON_SPEEDOMETER),
     "isBatteryWorkingModeOk": (None, ICON_CHECK),
     "lastKnownMeasureDate": (None, "mdi:clock-outline"),
     "isBatteryInBackupMode": (None, "mdi:backup-restore"),
-    "mppt1Power": (UNIT_WATT, ICON_SOLAR),
-    "mppt2Power": (UNIT_WATT, ICON_SOLAR),
-    "mppt3Power": (UNIT_WATT, ICON_SOLAR),
+    "mppt1Power": (UNIT_WATT, ICON_SOLAR, DEVICE_CLASS_POWER, STATE_CLASS_MEASUREMENT),
+    "mppt2Power": (UNIT_WATT, ICON_SOLAR, DEVICE_CLASS_POWER, STATE_CLASS_MEASUREMENT),
+    "mppt3Power": (UNIT_WATT, ICON_SOLAR, DEVICE_CLASS_POWER, STATE_CLASS_MEASUREMENT),
 }
 
 # -------------------------------------------------------------------
