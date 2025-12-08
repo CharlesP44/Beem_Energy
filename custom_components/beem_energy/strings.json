@@ -14,6 +14,7 @@
     "error": {
       "invalid_auth": "Identifiants invalides",
       "cannot_connect": "Connexion impossible avec les serveurs Beem",
+      "no_devices_found": "Aucun équipement Beem trouvé sur ce compte.",
       "unknown": "Erreur inattendue"
     },
     "abort": {
