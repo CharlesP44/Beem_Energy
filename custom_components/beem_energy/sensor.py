@@ -440,6 +440,10 @@ async def async_setup_entry(
         all_entities.append(BeemEnergySensor(hass, serial, "solarPower", "production"))
         all_entities.append(BeemEnergySensor(hass, serial, "meterPower", "consumption"))
         all_entities.append(BeemEnergySensor(hass, serial, "meterPower", "injection"))
+        all_entities.append(BeemEnergySensor(hass, serial, "solar", "autoconsumption"))
+        all_entities.append(BeemEnergySensor(hass, serial, "home", "total_consumption"))
+        all_entities.append(BeemAppLogicSensor(serial, "solar", "autoconsumption", mqtt_buffers[serial], rest_battery))
+        all_entities.append(BeemAppLogicSensor(serial, "home", "total_consumption", mqtt_buffers[serial], rest_battery))
         all_entities.append(BeemMqttLastUpdateSensor(serial, mqtt_buffers[serial]))
         all_entities.append(BeemMqttDebugSensor(serial, mqtt_buffers[serial]))
     solar_equipments = []
@@ -1887,6 +1891,109 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     return unload_ok
 
+class BeemAppLogicSensor(SensorEntity):
+    """Capteur qui reproduit la logique d'affichage de l'application Beem."""
+    
+    def __init__(self, serial, source_key, mode, mqtt_buffer, rest_battery):
+        self._serial = _serial_for_uid(serial)
+        self._source_key = source_key
+        self._mode = mode
+        self._mqtt_buffer = mqtt_buffer
+        self._rest_battery = rest_battery
+
+        # Génère le même unique_id que tes autres capteurs pour le lier au BeemEnergySensor
+        _ckey = _clean_key(self._serial, f"{source_key}_{mode}")
+        self._attr_unique_id = f"beem_{self._serial}_{_ckey}"
+        
+        if self._mode == "autoconsumption":
+            self._attr_name = "autoconsumption"
+            self._attr_icon = "mdi:solar-power"
+        elif self._mode == "total_consumption":
+            self._attr_name = "total consumption"
+            self._attr_icon = "mdi:home-lightning-bolt"
+
+        self._attr_native_unit_of_measurement = UnitOfPower.WATT
+        self._attr_device_class = SensorDeviceClass.POWER
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_has_entity_name = True
+        
+        self._unsub_dispatcher = None
+        self._unsub_timer = None
+
+    async def async_added_to_hass(self):
+        self._unsub_dispatcher = async_dispatcher_connect(
+            self.hass,
+            f"{SIGNAL_BEEM_BATTERY_UPDATE}_{self._serial}",
+            self.async_write_ha_state,
+        )
+
+        async def _on_timer(now):
+            self.async_write_ha_state()
+
+        self._unsub_timer = async_track_time_interval(
+            self.hass, _on_timer, timedelta(seconds=60)
+        )
+
+    async def async_will_remove_from_hass(self):
+        if self._unsub_dispatcher:
+            self._unsub_dispatcher()
+            self._unsub_dispatcher = None
+        if self._unsub_timer:
+            self._unsub_timer()
+            self._unsub_timer = None
+
+    def _get_raw(self, source_key):
+        if self._mqtt_buffer:
+            for k in _candidate_keys_for_mqtt(source_key):
+                val, _ = self._mqtt_buffer.get(k)
+                if val is not None:
+                    return _to_float(val)
+                    
+        if isinstance(self._rest_battery, dict):
+            for k in _candidate_keys_for_rest(source_key):
+                if k in self._rest_battery:
+                    val = self._rest_battery[k]
+                    if val is not None:
+                        return _to_float(val)
+        return None
+
+    @property
+    def native_value(self):
+        solar = self._get_raw("solarPower")
+        battery = self._get_raw("batteryPower")
+        meter = self._get_raw("meterPower")
+        
+        solar_val = solar if solar is not None else 0.0
+        battery_val = battery if battery is not None else 0.0
+        meter_val = meter if meter is not None else 0.0
+
+        production = solar_val if solar_val > 0 else 0.0
+        charging = battery_val if battery_val > 0 else 0.0
+        discharging = abs(battery_val) if battery_val < 0 else 0.0
+        injection = meter_val if meter_val > 0 else 0.0
+        consumption = abs(meter_val) if meter_val < 0 else 0.0
+
+        autoconsumption = max(0.0, production - charging - injection)
+
+        if self._mode == "autoconsumption":
+            return round(autoconsumption, 0)
+            
+        elif self._mode == "total_consumption":
+            total = autoconsumption + discharging + consumption
+            return round(total, 0)
+
+        return None
+
+    @property
+    def device_info(self):
+        serial = str(self._serial).strip()
+        return {
+            "identifiers": {(DOMAIN, serial)},
+            "name": f"Batterie Beem {serial}",
+            "manufacturer": "Beem Energy",
+            "model": "Beem Battery",
+        }
 
 class BeemEnergySwitchSensor(RestoreEntity, SensorEntity):
     def __init__(
