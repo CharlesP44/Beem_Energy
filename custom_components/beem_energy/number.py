@@ -76,7 +76,7 @@ class BaseBeemAdvancedNumber(CoordinatorEntity[BeemCoordinator], NumberEntity):
 class BeemMinSocNumber(BaseBeemAdvancedNumber):
     translation_key = "min_soc"
     _attr_native_min_value = 10
-    _attr_native_max_value = 50
+    _attr_native_max_value = 80
     _attr_native_step = 1
 
     def __init__(self, coordinator, serial, battery_id):
@@ -103,7 +103,7 @@ class BeemMinSocNumber(BaseBeemAdvancedNumber):
 
 class BeemMaxSocNumber(BaseBeemAdvancedNumber):
     translation_key = "max_soc"
-    _attr_native_min_value = 50
+    _attr_native_min_value = 30
     _attr_native_max_value = 100
     _attr_native_step = 1
 
