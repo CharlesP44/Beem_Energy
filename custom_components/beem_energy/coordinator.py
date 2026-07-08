@@ -50,6 +50,14 @@ class BeemCoordinator(DataUpdateCoordinator):
         self.password = password
         self.es_id: int | None = None
 
+        # Créé le clientId de session de data-stream, une seule fois au démarrage
+        # de HA. Il identifie le client (cette instance HA) et est partagé entre
+        # batteries et EnergySwitch. Une session Beem dure 30 minutes et est
+        # prolongée de 30 minutes à chaque appel POST data-stream portant le
+        # même clientId.
+        startup_ts = int(datetime.now(timezone.utc).timestamp())
+        self._stream_client_id = f"ha-stream-{config_entry.entry_id}-{startup_ts}"
+
         self.data: Dict[str, Any] = {}
         self.batteries_by_serial: Dict[str, Dict[str, Any]] = {}
         self.solar_equipments_by_mppt: Dict[str, Dict[str, Any]] = {}
@@ -264,7 +272,7 @@ class BeemCoordinator(DataUpdateCoordinator):
             "Authorization": f"Bearer {self.token_rest}",
             "Accept": "application/json",
         }
-        client_id = f"ha-keepalive-{self.config_entry.entry_id}-{int(datetime.now(timezone.utc).timestamp())}"
+        client_id = self._stream_client_id
 
         _LOGGER.debug(
             "[REST][keepalive] IDs à maintenir actifs : %s", list(all_battery_ids)
@@ -325,7 +333,7 @@ class BeemCoordinator(DataUpdateCoordinator):
 
         battery_id = battery_data["id"]
 
-        client_id = f"ha-streaming-{self.config_entry.entry_id}-{int(datetime.now(timezone.utc).timestamp())}"
+        client_id = self._stream_client_id
         headers = {
             "Authorization": f"Bearer {self.token_rest}",
             "Accept": "application/json",
@@ -373,7 +381,7 @@ class BeemCoordinator(DataUpdateCoordinator):
             "Authorization": f"Bearer {self.token_rest}",
             "Accept": "application/json",
         }
-        client_id = f"ha-keepalive-es-{self.config_entry.entry_id}-{int(datetime.now(timezone.utc).timestamp())}"
+        client_id = self._stream_client_id
         params = {"clientId": client_id}
 
         try:
@@ -404,11 +412,20 @@ class BeemCoordinator(DataUpdateCoordinator):
             )
 
 
+def _coordinator_key(entry_id: str) -> str:
+    return f"beem_coordinator_{entry_id}"
+
+
 async def get_beem_coordinator(hass, config_entry, token_rest, email, password):
-    key = f"beem_coordinator_{config_entry.entry_id}"
+    key = _coordinator_key(config_entry.entry_id)
     if key not in hass.data:
         hass.data[key] = BeemCoordinator(
             hass, config_entry, token_rest, email, password
         )
         await hass.data[key].async_config_entry_first_refresh()
     return hass.data[key]
+
+
+def async_remove_beem_coordinator(hass, entry_id: str) -> None:
+    """Retire le coordinator mis en cache pour éviter une instance fantôme après reload."""
+    hass.data.pop(_coordinator_key(entry_id), None)
