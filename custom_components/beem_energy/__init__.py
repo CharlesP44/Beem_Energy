@@ -13,7 +13,7 @@ from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN, PLATFORMS
 from .beem_api import get_tokens, get_devices
-from .coordinator import get_beem_coordinator
+from .coordinator import get_beem_coordinator, async_remove_beem_coordinator
 from .exceptions import BeemConnectionError
 from . import services
 
@@ -160,6 +160,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.info(
                 "Données pour l'entrée %s nettoyées de hass.data.", entry.entry_id
             )
+
+        async_remove_beem_coordinator(hass, entry.entry_id)
     else:
         _LOGGER.error("Échec du déchargement des plateformes pour %s.", entry.entry_id)
 
