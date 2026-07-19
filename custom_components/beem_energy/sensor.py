@@ -1221,10 +1221,10 @@ async def async_setup_entry(
         if coordinator:
             # Keep-alive pour la batterie (via REST)
             _LOGGER.info(
-                "Activation du keep-alive REST (Batterie) toutes les 20 minutes."
+                "Activation du keep-alive REST (Batterie) toutes les 2 minutes."
             )
             cancel_battery_keepalive = async_track_time_interval(
-                hass, coordinator.async_keepalive, timedelta(minutes=20)
+                hass, coordinator.async_keepalive, timedelta(minutes=2)
             )
             hass.data[DOMAIN][entry.entry_id]["timed_tasks"].append(
                 cancel_battery_keepalive
@@ -1233,10 +1233,10 @@ async def async_setup_entry(
             # Keep-alive pour l'EnergySwitch (via REST)
             if coordinator.es_serial:
                 _LOGGER.info(
-                    "Activation du keep-alive REST (EnergySwitch) toutes les 20 minutes."
+                    "Activation du keep-alive REST (EnergySwitch) toutes les 2 minutes."
                 )
                 cancel_es_keepalive = async_track_time_interval(
-                    hass, coordinator.async_keepalive_es, timedelta(minutes=20)
+                    hass, coordinator.async_keepalive_es, timedelta(minutes=2)
                 )
                 hass.data[DOMAIN][entry.entry_id]["timed_tasks"].append(
                     cancel_es_keepalive
