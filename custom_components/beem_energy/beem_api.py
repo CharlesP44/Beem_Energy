@@ -21,6 +21,35 @@ BEEM_429_DELAY = 20 * 60  # 20 min en secondes
 BEEM_429_MEMKEY = "beem_429_lock_ts"
 BEEM_429_LAST_NOTIF = "beem_429_last_notif_ts"
 
+# Global in-process 429 lock (protects all endpoints when a 429 is seen)
+_GLOBAL_429_LOCK_TS: float = 0.0
+_GLOBAL_429_RETRY: int = 0
+_GLOBAL_429_BASE: int = 15 * 60  # 15 minutes base
+_GLOBAL_429_MAX: int = 60 * 60  # cap at 60 minutes
+
+
+def _global_429_is_locked() -> bool:
+    return time.time() < _GLOBAL_429_LOCK_TS
+
+
+def _global_429_set_lock() -> None:
+    """Set a progressive global 429 lock (exponential: 15 -> 30 -> 60 -> cap)."""
+    global _GLOBAL_429_LOCK_TS, _GLOBAL_429_RETRY
+    delay = min(_GLOBAL_429_BASE * (2 ** _GLOBAL_429_RETRY), _GLOBAL_429_MAX)
+    _GLOBAL_429_RETRY += 1
+    _GLOBAL_429_LOCK_TS = time.time() + delay
+    _LOGGER.warning(
+        "[GLOBAL 429] API rate limit hit — global backoff %ds until %.1f",
+        delay,
+        _GLOBAL_429_LOCK_TS,
+    )
+
+
+def _global_429_reset() -> None:
+    global _GLOBAL_429_LOCK_TS, _GLOBAL_429_RETRY
+    _GLOBAL_429_LOCK_TS = 0.0
+    _GLOBAL_429_RETRY = 0
+
 
 def _beem429_set_lock(hass, email: str) -> None:
     """Active le blocage anti-429 pour un utilisateur."""
@@ -248,6 +277,7 @@ async def _refresh_mqtt_token(token_rest: str, client_id: str) -> tuple[str, flo
             ) as mqtt_resp:
                 mqtt_text = await mqtt_resp.text()
                 if mqtt_resp.status == 429:
+                    _global_429_set_lock()
                     raise BeemConnectionError("Limite API MQTT atteinte (429).")
                 if mqtt_resp.status != 200:
                     _LOGGER.error(
@@ -272,6 +302,10 @@ async def get_box_summary(token_rest: str) -> list:
     now = datetime.now()
     payload = {"month": now.month, "year": now.year}
 
+    # Respect global 429 lock
+    if _global_429_is_locked():
+        raise BeemConnectionError("Global API rate limit in effect — try later")
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -282,6 +316,9 @@ async def get_box_summary(token_rest: str) -> list:
                 },
                 json=payload,
             ) as resp:
+                if resp.status == 429:
+                    _global_429_set_lock()
+                    raise BeemConnectionError("Limite API atteinte (429) sur box/summary")
                 if resp.status not in (200, 201):
                     _LOGGER.warning(
                         "Erreur récupération BeemBox summary (%s) : %s",
@@ -289,6 +326,8 @@ async def get_box_summary(token_rest: str) -> list:
                         await resp.text(),
                     )
                     return []
+                # On succès, reset global 429 state
+                _global_429_reset()
                 return await resp.json()
     except aiohttp.ClientError as e:
         _LOGGER.error("Erreur réseau Beem (Box Summary): %s", e)
@@ -301,6 +340,11 @@ async def get_box_summary(token_rest: str) -> list:
 async def get_devices(token_rest: str) -> dict:
     """Retourne le payload complet de l'endpoint /devices. Propage les erreurs temporaires."""
     url = f"{BASE_URL}/devices"
+
+    # Respect global 429 lock
+    if _global_429_is_locked():
+        raise BeemConnectionError("Global API rate limit in effect — try later")
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -314,6 +358,7 @@ async def get_devices(token_rest: str) -> dict:
                 if resp.status == 401:
                     raise BeemAuthError("Token expiré ou invalide")
                 if resp.status == 429:
+                    _global_429_set_lock()
                     raise BeemConnectionError("Limite API atteinte (429) sur /devices.")
                 if resp.status >= 500:
                     raise BeemConnectionError("Serveur Beem indisponible (/devices)")
@@ -333,6 +378,11 @@ async def get_devices(token_rest: str) -> dict:
 
 async def get_battery_data(token_rest: str, battery_serial: str | None = None):
     url = f"{BASE_URL}/batteries"
+
+    # Respect global 429 lock
+    if _global_429_is_locked():
+        raise BeemConnectionError("Global API rate limit in effect — try later")
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -343,6 +393,9 @@ async def get_battery_data(token_rest: str, battery_serial: str | None = None):
                 },
             ) as resp:
                 text = await resp.text()
+                if resp.status == 429:
+                    _global_429_set_lock()
+                    raise BeemConnectionError("Limite API atteinte (429) sur /batteries")
                 if resp.status not in (200, 201):
                     _LOGGER.error(
                         "Erreur récupération batterie Beem (%s) : %s", resp.status, text
@@ -364,6 +417,11 @@ async def get_battery_data(token_rest: str, battery_serial: str | None = None):
 
 async def get_battery_live(token_rest: str, battery_serial: str):
     url = f"{BASE_URL}/batteries/{battery_serial}/live"
+
+    # Respect global 429 lock
+    if _global_429_is_locked():
+        raise BeemConnectionError("Global API rate limit in effect — try later")
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -374,6 +432,11 @@ async def get_battery_live(token_rest: str, battery_serial: str):
                 },
             ) as resp:
                 text = await resp.text()
+                if resp.status == 429:
+                    _global_429_set_lock()
+                    raise BeemConnectionError(
+                        "Limite API atteinte (429) sur /batteries/<serial>/live"
+                    )
                 if resp.status not in (200, 201):
                     _LOGGER.error(
                         "Erreur récupération live battery Beem (%s) : %s",
@@ -382,6 +445,8 @@ async def get_battery_live(token_rest: str, battery_serial: str):
                     )
                     return None
                 data = await resp.json()
+                # On succès, reset global 429 state
+                _global_429_reset()
                 return data
     except Exception as e:
         _LOGGER.error("Erreur REST battery live: %s", e)
@@ -401,6 +466,11 @@ async def invalidate_tokens(hass, config_entry: ConfigEntry, email: str) -> None
 async def get_battery_live_data(token_rest: str, battery_id: int) -> dict:
     """Endpoint live-data (utilisé par le coordinator pour keep-alive)."""
     url = f"{BASE_URL}/batteries/{battery_id}/live-data"
+
+    # Respect global 429 lock
+    if _global_429_is_locked():
+        raise BeemConnectionError("Global API rate limit in effect — try later")
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -410,8 +480,13 @@ async def get_battery_live_data(token_rest: str, battery_id: int) -> dict:
                     "Accept": "application/json",
                 },
             ) as resp:
+                if resp.status == 429:
+                    _global_429_set_lock()
+                    raise BeemConnectionError("Limite API atteinte (429) sur /batteries/<id>/live-data")
                 if resp.status not in (200, 201):
                     return {}
+                # On succès, reset global 429 state
+                _global_429_reset()
                 return await resp.json()
     except Exception:
         return {}
@@ -420,6 +495,10 @@ async def get_battery_live_data(token_rest: str, battery_id: int) -> dict:
 async def get_battery_control_parameters(token_rest: str, battery_id: int) -> dict:
     """Récupère les paramètres de contrôle actuels de la batterie (mode, etc.)."""
     url = f"{BASE_URL}/batteries/{battery_id}/control-parameters"
+
+    # Respect global 429 lock
+    if _global_429_is_locked():
+        raise BeemConnectionError("Global API rate limit in effect — try later")
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -432,6 +511,11 @@ async def get_battery_control_parameters(token_rest: str, battery_id: int) -> di
                     raise BeemAuthError(
                         "Token expiré ou invalide (get_control_parameters)"
                     )
+                if resp.status == 429:
+                    _global_429_set_lock()
+                    raise BeemConnectionError(
+                        "Limite API atteinte (429) sur /batteries/<id>/control-parameters"
+                    )
                 if resp.status not in (200, 201):
                     _LOGGER.warning(
                         "Impossible de récupérer les paramètres de contrôle pour la batterie %s (status: %s)",
@@ -439,6 +523,8 @@ async def get_battery_control_parameters(token_rest: str, battery_id: int) -> di
                         resp.status,
                     )
                     return {}
+                # On succès, reset global 429 state
+                _global_429_reset()
                 return await resp.json()
     except aiohttp.ClientError:
         _LOGGER.warning(
@@ -454,6 +540,10 @@ async def set_battery_control_parameters(
     """Modifie un ou plusieurs paramètres de contrôle de la batterie."""
     url = f"{BASE_URL}/batteries/{battery_id}/control-parameters"
 
+    # Respect global 429 lock
+    if _global_429_is_locked():
+        raise BeemConnectionError("Global API rate limit in effect — try later")
+
     _LOGGER.debug(
         "Modification des paramètres de la batterie %s -> %s", battery_id, params
     )
@@ -467,6 +557,11 @@ async def set_battery_control_parameters(
             }
             async with session.patch(url, json=params, headers=headers) as resp:
                 text = await resp.text()
+                if resp.status == 429:
+                    _global_429_set_lock()
+                    raise BeemConnectionError(
+                        "Limite API atteinte (429) sur /batteries/<id>/control-parameters"
+                    )
                 if resp.status not in (200, 201, 204):
                     _LOGGER.error(
                         "Erreur Beem modification des paramètres (%s) : %s",
@@ -474,6 +569,9 @@ async def set_battery_control_parameters(
                         text,
                     )
                     raise Exception(f"Erreur Beem : {text}")
+
+                # On succès, reset global 429 state
+                _global_429_reset()
 
                 _LOGGER.info(
                     "Paramètres de la batterie %s modifiés avec succès : %s",
