@@ -1136,28 +1136,29 @@ async def async_setup_entry(
                 }
                 payload_str = json.dumps(body)
 
-                # Polling HA (local)
-                try:
-                    await ha_mqtt.async_publish(
-                        hass, f"brain/{es_l}/rpc", payload_str, qos=0, retain=False
-                    )
-                    await ha_mqtt.async_publish(
-                        hass,
-                        f"brain/{es_l}/events/rpc",
-                        payload_str,
-                        qos=0,
-                        retain=False,
-                    )
-                    _LOGGER.debug(
-                        "[MQTT][brain][HA] → Poll '%s' sur brain/%s/[events/]rpc",
-                        call["method"],
-                        es_l,
-                    )
-                except Exception as e:
-                    _LOGGER.warning(
-                        "[MQTT][brain][HA] Échec publish sur /rpc ou /events/rpc : %s",
-                        e,
-                    )
+                # Polling HA (local) - only if MQTT is configured
+                if "mqtt" in hass.config.components:
+                    try:
+                        await ha_mqtt.async_publish(
+                            hass, f"brain/{es_l}/rpc", payload_str, qos=0, retain=False
+                        )
+                        await ha_mqtt.async_publish(
+                            hass,
+                            f"brain/{es_l}/events/rpc",
+                            payload_str,
+                            qos=0,
+                            retain=False,
+                        )
+                        _LOGGER.debug(
+                            "[MQTT][brain][HA] → Poll '%s' sur brain/%s/[events/]rpc",
+                            call["method"],
+                            es_l,
+                        )
+                    except Exception as e:
+                        _LOGGER.debug(
+                            "[MQTT][brain][HA] Échec publish sur /rpc ou /events/rpc : %s",
+                            e,
+                        )
 
                 # Polling Cloud (par sécurité)
                 if cloud_mqtt_connected:
