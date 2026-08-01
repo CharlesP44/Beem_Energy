@@ -156,6 +156,33 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         "Erreur lors de la fermeture du client MQTT : %s", e
                     )
 
+            # Cancel periodic tasks (timers) to avoid leaks after reload/unload
+            timed_tasks = entry_data.get("timed_tasks", [])
+            if timed_tasks:
+                _LOGGER.info("Annulation de %d tâches périodiques (timers).", len(timed_tasks))
+                for cancel_task in list(timed_tasks):
+                    try:
+                        # cancel_task is the unsubscribe/cancel callable returned by async_track_time_interval
+                        cancel_task()
+                    except Exception as e:
+                        _LOGGER.debug("Erreur lors de l'annulation d'une tâche périodique: %s", e)
+
+            # Cancel the beem cloud listener task if present
+            beem_task = entry_data.get("beem_cloud_task_battery")
+            if beem_task:
+                try:
+                    if hasattr(beem_task, "cancel"):
+                        beem_task.cancel()
+                        # Await it briefly to allow cancellation to propagate
+                        try:
+                            await beem_task
+                        except asyncio.CancelledError:
+                            _LOGGER.debug("beem_cloud_task_battery annulé avec succès")
+                        except Exception as e:
+                            _LOGGER.debug("Erreur lors de l'attente d'annulation de beem_task: %s", e)
+                except Exception as e:
+                    _LOGGER.debug("Erreur lors de l'annulation du beem_cloud_task_battery: %s", e)
+
             hass.data[DOMAIN].pop(entry.entry_id, None)
             _LOGGER.info(
                 "Données pour l'entrée %s nettoyées de hass.data.", entry.entry_id
