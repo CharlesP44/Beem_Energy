@@ -24,20 +24,29 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Configure les entités select à partir d'une entrée de configuration."""
-    coordinator: BeemCoordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")
-
-    if not coordinator or not coordinator.data:
-        _LOGGER.warning(
-            "Coordinateur Beem non prêt, les entités select ne peuvent être ajoutées."
-        )
-        return
+    entry_data = hass.data[DOMAIN][entry.entry_id]
+    coordinators_map = entry_data.get("coordinators")
 
     entities = []
-    for serial, battery_data in coordinator.data.get("batteries_by_serial", {}).items():
-        if battery_id := battery_data.get("id"):
-            entities.append(BeemBatteryModeSelect(coordinator, serial, battery_id))
-
-            entities.append(BeemChargePowerSelect(coordinator, serial, battery_id))
+    if coordinators_map:
+        for coordinator in coordinators_map.values():
+            if not coordinator or not getattr(coordinator, "data", None):
+                continue
+            for serial, battery_data in coordinator.data.get("batteries_by_serial", {}).items():
+                if battery_id := battery_data.get("id"):
+                    entities.append(BeemBatteryModeSelect(coordinator, serial, battery_id))
+                    entities.append(BeemChargePowerSelect(coordinator, serial, battery_id))
+    else:
+        coordinator: BeemCoordinator = entry_data.get("coordinator")
+        if not coordinator or not coordinator.data:
+            _LOGGER.warning(
+                "Coordinateur Beem non prêt, les entités select ne peuvent être ajoutées."
+            )
+            return
+        for serial, battery_data in coordinator.data.get("batteries_by_serial", {}).items():
+            if battery_id := battery_data.get("id"):
+                entities.append(BeemBatteryModeSelect(coordinator, serial, battery_id))
+                entities.append(BeemChargePowerSelect(coordinator, serial, battery_id))
 
     async_add_entities(entities)
 
