@@ -5,6 +5,7 @@ from datetime import timedelta
 from typing import Any, Dict
 import aiohttp
 import asyncio
+import time
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -24,6 +25,59 @@ from .beem_api import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Backoff constants
+BACKOFF_429_DELAY = 15 * 60  # 15 minutes for rate limit
+BACKOFF_5XX_BASE = 5  # Base delay for 5xx errors (seconds)
+BACKOFF_5XX_MAX = 300  # Max backoff (5 minutes)
+WARNING_THROTTLE_SECONDS = 60  # Throttle "cannot find serial" warning
+
+
+class BackoffState:
+    """Tracks backoff state for a specific resource (battery serial, energy switch ID, etc.)."""
+
+    def __init__(self):
+        self.retry_count = 0
+        self.next_allowed_time = 0.0
+        self.last_warning_time = 0.0
+
+    def is_allowed(self, now: float) -> bool:
+        """Check if operation is allowed (backoff expired)."""
+        return now >= self.next_allowed_time
+
+    def can_warn(self, now: float) -> bool:
+        """Check if warning should be logged (throttled)."""
+        if now - self.last_warning_time >= WARNING_THROTTLE_SECONDS:
+            self.last_warning_time = now
+            return True
+        return False
+
+    def handle_429(self, now: float):
+        """Handle 429 (rate limit) error."""
+        self.retry_count += 1
+        self.next_allowed_time = now + BACKOFF_429_DELAY
+        _LOGGER.warning(
+            "Rate limit (429) hit. Backing off for %d seconds until %.1f",
+            BACKOFF_429_DELAY,
+            self.next_allowed_time,
+        )
+
+    def handle_5xx(self, now: float):
+        """Handle 5xx server errors with exponential backoff."""
+        delay = min(BACKOFF_5XX_BASE * (2 ** self.retry_count), BACKOFF_5XX_MAX)
+        self.next_allowed_time = now + delay
+        self.retry_count += 1
+        _LOGGER.warning(
+            "Server error (5xx). Exponential backoff: attempt %d, waiting %d seconds",
+            self.retry_count,
+            delay,
+        )
+
+    def reset(self):
+        """Reset backoff state on success."""
+        self.retry_count = 0
+        self.next_allowed_time = 0.0
+
+
 
 class BeemCoordinator(DataUpdateCoordinator):
     """Coordonne le polling REST pour les appareils Beem (batteries, etc.)."""
@@ -35,6 +89,7 @@ class BeemCoordinator(DataUpdateCoordinator):
         token_rest: str,
         email: str,
         password: str,
+        house_id: str | None = None,
     ):
         poll_seconds = int(config_entry.options.get("rest_poll_interval", 120))
         super().__init__(
@@ -49,6 +104,7 @@ class BeemCoordinator(DataUpdateCoordinator):
         self.email = email
         self.password = password
         self.es_id: int | None = None
+        self.house_id: str | None = str(house_id) if house_id is not None else None
 
         # Créé le clientId de session de data-stream, une seule fois au démarrage
         # de HA. Il identifie le client (cette instance HA) et est partagé entre
@@ -65,6 +121,11 @@ class BeemCoordinator(DataUpdateCoordinator):
         self.beemboxes_by_id: Dict[str, Dict[str, Any]] = {}
         self.energyswitch_by_serial: Dict[str, Dict[str, Dict[str, Any]]] = {}
         self.es_serial: str | None = None
+
+        # Backoff state management
+        self._backoff_streaming_by_serial: Dict[str, BackoffState] = {}
+        self._backoff_keepalive_es = BackoffState()
+        self._backoff_serial_warning = BackoffState()
 
     async def _async_update_data(self):
         """
@@ -143,6 +204,18 @@ class BeemCoordinator(DataUpdateCoordinator):
             if devices_payload:
                 batteries = devices_payload.get("batteries", []) or []
                 energyswitches = devices_payload.get("energySwitches", []) or []
+
+                # Si un house_id est fourni pour ce coordinator, ne garder que les appareils appartenant à cette maison
+                if self.house_id:
+                    try:
+                        batteries = [b for b in batteries if str(b.get("houseId") or b.get("house_id") or "") == str(self.house_id)]
+                    except Exception:
+                        batteries = batteries
+                    try:
+                        energyswitches = [e for e in energyswitches if str(e.get("houseId") or e.get("house_id") or "") == str(self.house_id)]
+                    except Exception:
+                        energyswitches = energyswitches
+
                 energyswitch_serial = (
                     energyswitches[0].get("serialNumber") if energyswitches else None
                 )
@@ -195,6 +268,11 @@ class BeemCoordinator(DataUpdateCoordinator):
                                 beemboxes_list.append(box_dict)
 
                 top_level_beemboxes = devices_payload.get("beemboxes", []) or []
+                if self.house_id:
+                    try:
+                        top_level_beemboxes = [b for b in top_level_beemboxes if str(b.get("houseId") or b.get("house_id") or "") == str(self.house_id)]
+                    except Exception:
+                        top_level_beemboxes = top_level_beemboxes
                 if top_level_beemboxes:
                     _LOGGER.debug(
                         "Traitement de %d BeemBox de haut niveau.",
@@ -364,11 +442,93 @@ class BeemCoordinator(DataUpdateCoordinator):
             )
             return False
 
+    async def async_ensure_streaming(self, serial: str) -> bool:
+        """S'assure que le flux de données MQTT est actif pour une batterie spécifique."""
+        _LOGGER.debug(
+            "[STREAMING] Demande de maintien du flux pour le serial %s", serial
+        )
+        
+        # Get or create backoff state for this serial
+        if serial not in self._backoff_streaming_by_serial:
+            self._backoff_streaming_by_serial[serial] = BackoffState()
+        
+        backoff = self._backoff_streaming_by_serial[serial]
+        now = time.time()
+        
+        # Check if backoff period is still active
+        if not backoff.is_allowed(now):
+            _LOGGER.debug(
+                "[STREAMING] Backoff actif pour %s, réessai en %.1f secondes",
+                serial,
+                backoff.next_allowed_time - now,
+            )
+            return False
+        
+        if not self.token_rest or not serial:
+            return False
+
+        battery_data = self.batteries_by_serial.get(serial.upper())
+        if not battery_data or not battery_data.get("id"):
+            if self._backoff_serial_warning.can_warn(now):
+                _LOGGER.warning(
+                    "[STREAMING] Impossible de trouver l'ID pour le serial %s", serial
+                )
+            return False
+
+        battery_id = battery_data["id"]
+
+        client_id = self._stream_client_id
+        headers = {
+            "Authorization": f"******",
+            "Accept": "application/json",
+        }
+        data_stream_url = f"{BASE_URL}/batteries/{battery_id}/data-stream"
+        params = {"clientId": client_id}
+
+        try:
+            async with aiohttp.ClientSession(headers=headers) as session:
+                async with session.post(data_stream_url, params=params) as resp:
+                    if resp.status in (200, 201):
+                        _LOGGER.debug(
+                            "[STREAMING] Maintien du flux OK pour %s (status %d)",
+                            serial,
+                            resp.status,
+                        )
+                        backoff.reset()
+                        return True
+                    elif resp.status == 429:
+                        backoff.handle_429(now)
+                        return False
+                    elif resp.status >= 500:
+                        backoff.handle_5xx(now)
+                        return False
+                    else:
+                        _LOGGER.warning(
+                            "[STREAMING] Échec du maintien du flux pour %s (status %d)",
+                            serial,
+                            resp.status,
+                        )
+                        return False
+        except Exception as e:
+            _LOGGER.error(
+                "[STREAMING] Erreur lors du maintien du flux pour %s: %s", serial, e
+            )
+            return False
+
     async def async_keepalive_es(self, now=None):
         """Initie ou maintient le flux de données MQTT pour l'EnergySwitch via l'endpoint data-stream."""
         if not self.es_id or not self.token_rest:
             _LOGGER.debug(
                 "[KEEP-ALIVE ES] Annulé (ID de l'EnergySwitch ou token REST manquant)."
+            )
+            return
+
+        # Backoff check
+        now_ts = time.time()
+        if not self._backoff_keepalive_es.is_allowed(now_ts):
+            _LOGGER.debug(
+                "[KEEP-ALIVE ES] Backoff actif, réessai en %.1f secondes",
+                self._backoff_keepalive_es.next_allowed_time - now_ts,
             )
             return
 
@@ -378,7 +538,7 @@ class BeemCoordinator(DataUpdateCoordinator):
 
         url = f"{BASE_URL}/energy-switches/{self.es_id}/data-stream"
         headers = {
-            "Authorization": f"Bearer {self.token_rest}",
+            "Authorization": f"******",
             "Accept": "application/json",
         }
         client_id = self._stream_client_id
@@ -387,15 +547,17 @@ class BeemCoordinator(DataUpdateCoordinator):
         try:
             async with aiohttp.ClientSession(headers=headers) as session:
                 async with session.post(url, params=params) as resp:
-                    if resp.status in (
-                        200,
-                        201,
-                    ):  # 200 OK ou 201 Created sont des succès
+                    if resp.status in (200, 201):
                         _LOGGER.debug(
                             "[KEEP-ALIVE ES] Maintien du flux réussi (status %d) pour l'ID %s.",
                             resp.status,
                             self.es_id,
                         )
+                        self._backoff_keepalive_es.reset()
+                    elif resp.status == 429:
+                        self._backoff_keepalive_es.handle_429(now_ts)
+                    elif resp.status >= 500:
+                        self._backoff_keepalive_es.handle_5xx(now_ts)
                     else:
                         _LOGGER.warning(
                             "[KEEP-ALIVE ES] Échec du maintien du flux (status %d) pour l'ID %s.",
@@ -412,20 +574,23 @@ class BeemCoordinator(DataUpdateCoordinator):
             )
 
 
-def _coordinator_key(entry_id: str) -> str:
-    return f"beem_coordinator_{entry_id}"
+def _coordinator_key(entry_id: str, house_id: str | None = None) -> str:
+    base = f"beem_coordinator_{entry_id}"
+    if house_id:
+        return f"{base}_{house_id}"
+    return base
 
 
-async def get_beem_coordinator(hass, config_entry, token_rest, email, password):
-    key = _coordinator_key(config_entry.entry_id)
+async def get_beem_coordinator(hass, config_entry, token_rest, email, password, house_id: str | None = None):
+    key = _coordinator_key(config_entry.entry_id, house_id)
     if key not in hass.data:
-        hass.data[key] = BeemCoordinator(
-            hass, config_entry, token_rest, email, password
-        )
+        hass.data[key] = BeemCoordinator(hass, config_entry, token_rest, email, password, house_id=house_id)
         await hass.data[key].async_config_entry_first_refresh()
     return hass.data[key]
 
-
 def async_remove_beem_coordinator(hass, entry_id: str) -> None:
-    """Retire le coordinator mis en cache pour éviter une instance fantôme après reload."""
-    hass.data.pop(_coordinator_key(entry_id), None)
+    """Retire le(s) coordinator(s) mis en cache pour éviter une instance fantôme après reload."""
+    prefix = f"beem_coordinator_{entry_id}"
+    for key in list(hass.data.keys()):
+        if str(key).startswith(prefix):
+            hass.data.pop(key, None)
