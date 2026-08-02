@@ -19,13 +19,23 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ):
-    coordinator: BeemCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    entry_data = hass.data[DOMAIN][entry.entry_id]
+    coordinators_map = entry_data.get("coordinators")
 
     entities = []
-    for serial, battery_data in coordinator.data.get("batteries_by_serial", {}).items():
-        if battery_id := battery_data.get("id"):
-            entities.append(BeemMinSocNumber(coordinator, serial, battery_id))
-            entities.append(BeemMaxSocNumber(coordinator, serial, battery_id))
+    if coordinators_map:
+        for coordinator in coordinators_map.values():
+            for serial, battery_data in coordinator.data.get("batteries_by_serial", {}).items():
+                if battery_id := battery_data.get("id"):
+                    entities.append(BeemMinSocNumber(coordinator, serial, battery_id))
+                    entities.append(BeemMaxSocNumber(coordinator, serial, battery_id))
+    else:
+        coordinator: BeemCoordinator = entry_data.get("coordinator")
+        if coordinator:
+            for serial, battery_data in coordinator.data.get("batteries_by_serial", {}).items():
+                if battery_id := battery_data.get("id"):
+                    entities.append(BeemMinSocNumber(coordinator, serial, battery_id))
+                    entities.append(BeemMaxSocNumber(coordinator, serial, battery_id))
 
     async_add_entities(entities)
 
