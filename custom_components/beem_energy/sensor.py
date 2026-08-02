@@ -557,12 +557,24 @@ async def async_setup_entry(
                 else:
                     _add(val)
         try:
-            coordinator_local = hass.data[DOMAIN][entry.entry_id].get("coordinator")
-            if coordinator_local and hasattr(coordinator_local, "data"):
-                _add(
-                    coordinator_local.data.get("energyswitch_serial")
-                    or coordinator_local.data.get("energy_switch_serial")
-                )
+            # Inspecter tous les coordinators (multi-house) pour récupérer les energyswitch_serial
+            entry_coordinators = hass.data[DOMAIN][entry.entry_id].get("coordinators")
+            if entry_coordinators:
+                for c in entry_coordinators.values():
+                    try:
+                        _add(
+                            getattr(c, "data", {}).get("energyswitch_serial")
+                            or getattr(c, "data", {}).get("energy_switch_serial")
+                        )
+                    except Exception:
+                        pass
+            else:
+                coordinator_local = hass.data[DOMAIN][entry.entry_id].get("coordinator")
+                if coordinator_local and hasattr(coordinator_local, "data"):
+                    _add(
+                        coordinator_local.data.get("energyswitch_serial")
+                        or coordinator_local.data.get("energy_switch_serial")
+                    )
         except Exception as e:
             _LOGGER.debug(
                 "N'a pas pu récupérer le serial de l'EnergySwitch depuis le coordinateur (peut être normal au démarrage) : %s",
@@ -1052,29 +1064,50 @@ async def async_setup_entry(
         for es_serial in list(mqtt_buffers_es.keys()):
             async_dispatcher_send(hass, f"{SIGNAL_BEEM_ES_UPDATE}_{es_serial}")
         try:
-            if not coordinator:
+            # Build list of coordinators (support multi-house)
+            entry_coordinators = hass.data[DOMAIN][entry.entry_id].get("coordinators")
+            if entry_coordinators:
+                coord_list = list(entry_coordinators.values())
+            else:
+                single_coord = hass.data[DOMAIN][entry.entry_id].get("coordinator")
+                coord_list = [single_coord] if single_coord else []
+
+            if not coord_list:
                 return
+
             for serial, buf in list(mqtt_buffers.items()):
                 if not buf.is_fresh():
-                    for attr in (
-                        "async_ensure_streaming",
-                        "async_keep_streaming",
-                        "ensure_streaming",
-                    ):
-                        fn = getattr(coordinator, attr, None)
-                        if callable(fn):
-                            try:
-                                res = fn(serial)
-                                if asyncio.iscoroutine(res):
-                                    await res
-                                break
-                            except Exception as e:
-                                _LOGGER.debug(
-                                    "La tentative de relance du streaming via '%s' pour le serial %s a échoué : %s",
-                                    attr,
-                                    serial,
-                                    e,
-                                )
+                    # Try to ensure streaming using any available coordinator for that serial
+                    for c in coord_list:
+                        for attr in (
+                            "async_ensure_streaming",
+                            "async_keep_streaming",
+                            "ensure_streaming",
+                        ):
+                            fn = getattr(c, attr, None)
+                            if callable(fn):
+                                try:
+                                    res = fn(serial)
+                                    if asyncio.iscoroutine(res):
+                                        await res
+                                    raise StopIteration
+                                except StopIteration:
+                                    # success -> break out of both loops
+                                    break
+                                except Exception as e:
+                                    _LOGGER.debug(
+                                        "La tentative de relance du streaming via '%s' pour le serial %s a échoué (coord=%s) : %s",
+                                        attr,
+                                        serial,
+                                        getattr(c, 'house_id', getattr(c, 'email', 'unknown')),
+                                        e,
+                                    )
+                        else:
+                            # continue outer loop if inner not broken
+                            continue
+                        # inner broken => break outer coordinator loop
+                        break
+
             stale_store = hass.data[DOMAIN][entry.entry_id].setdefault(
                 "stale_counts", {}
             )
@@ -1087,8 +1120,17 @@ async def async_setup_entry(
                         serial,
                     )
                     try:
-                        if hasattr(coordinator, "async_request_refresh"):
-                            await coordinator.async_request_refresh()
+                        # Trigger refresh on all coordinators
+                        for c in coord_list:
+                            if hasattr(c, "async_request_refresh"):
+                                try:
+                                    await c.async_request_refresh()
+                                except Exception as e:
+                                    _LOGGER.debug(
+                                        "Échec de la demande de refresh REST sur coord %s: %s",
+                                        getattr(c, 'house_id', getattr(c, 'email', 'unknown')),
+                                        e,
+                                    )
                     except Exception as e:
                         _LOGGER.debug(
                             "Échec de la demande de refresh REST global: %s", e
@@ -1136,28 +1178,29 @@ async def async_setup_entry(
                 }
                 payload_str = json.dumps(body)
 
-                # Polling HA (local)
-                try:
-                    await ha_mqtt.async_publish(
-                        hass, f"brain/{es_l}/rpc", payload_str, qos=0, retain=False
-                    )
-                    await ha_mqtt.async_publish(
-                        hass,
-                        f"brain/{es_l}/events/rpc",
-                        payload_str,
-                        qos=0,
-                        retain=False,
-                    )
-                    _LOGGER.debug(
-                        "[MQTT][brain][HA] → Poll '%s' sur brain/%s/[events/]rpc",
-                        call["method"],
-                        es_l,
-                    )
-                except Exception as e:
-                    _LOGGER.warning(
-                        "[MQTT][brain][HA] Échec publish sur /rpc ou /events/rpc : %s",
-                        e,
-                    )
+                # Polling HA (local) - only if MQTT is configured
+                if "mqtt" in hass.config.components:
+                    try:
+                        await ha_mqtt.async_publish(
+                            hass, f"brain/{es_l}/rpc", payload_str, qos=0, retain=False
+                        )
+                        await ha_mqtt.async_publish(
+                            hass,
+                            f"brain/{es_l}/events/rpc",
+                            payload_str,
+                            qos=0,
+                            retain=False,
+                        )
+                        _LOGGER.debug(
+                            "[MQTT][brain][HA] → Poll '%s' sur brain/%s/[events/]rpc",
+                            call["method"],
+                            es_l,
+                        )
+                    except Exception as e:
+                        _LOGGER.debug(
+                            "[MQTT][brain][HA] Échec publish sur /rpc ou /events/rpc : %s",
+                            e,
+                        )
 
                 # Polling Cloud (par sécurité)
                 if cloud_mqtt_connected:
@@ -1217,30 +1260,59 @@ async def async_setup_entry(
             _LOGGER.info(
                 "Le polling de l'EnergySwitch est désactivé (via constante de développement)."
             )
-        coordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")
-        if coordinator:
-            # Keep-alive pour la batterie (via REST)
-            _LOGGER.info(
-                "Activation du keep-alive REST (Batterie) toutes les 2 minutes."
-            )
-            cancel_battery_keepalive = async_track_time_interval(
-                hass, coordinator.async_keepalive, timedelta(minutes=2)
-            )
-            hass.data[DOMAIN][entry.entry_id]["timed_tasks"].append(
-                cancel_battery_keepalive
-            )
-
-            # Keep-alive pour l'EnergySwitch (via REST)
-            if coordinator.es_serial:
+        # Keep-alive pour chaque coordinator (REST)
+        entry_coordinators = hass.data[DOMAIN][entry.entry_id].get("coordinators")
+        if entry_coordinators:
+            for c in entry_coordinators.values():
+                try:
+                    _LOGGER.info(
+                        "Activation du keep-alive REST (Batterie) pour house %s toutes les 2 minutes.",
+                        getattr(c, "house_id", "unknown"),
+                    )
+                    cancel_battery_keepalive = async_track_time_interval(
+                        hass, c.async_keepalive, timedelta(minutes=2)
+                    )
+                    hass.data[DOMAIN][entry.entry_id]["timed_tasks"].append(
+                        cancel_battery_keepalive
+                    )
+                    if getattr(c, "es_serial", None):
+                        _LOGGER.info(
+                            "Activation du keep-alive REST (EnergySwitch) pour house %s toutes les 2 minutes.",
+                            getattr(c, "house_id", "unknown"),
+                        )
+                        cancel_es_keepalive = async_track_time_interval(
+                            hass, c.async_keepalive_es, timedelta(minutes=2)
+                        )
+                        hass.data[DOMAIN][entry.entry_id]["timed_tasks"].append(
+                            cancel_es_keepalive
+                        )
+                except Exception as e:
+                    _LOGGER.debug("Erreur lors de la planification des keep-alives pour coord %s: %s", getattr(c, 'house_id', 'unknown'), e)
+        else:
+            coordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")
+            if coordinator:
+                # Keep-alive pour la batterie (via REST)
                 _LOGGER.info(
-                    "Activation du keep-alive REST (EnergySwitch) toutes les 2 minutes."
+                    "Activation du keep-alive REST (Batterie) toutes les 2 minutes."
                 )
-                cancel_es_keepalive = async_track_time_interval(
-                    hass, coordinator.async_keepalive_es, timedelta(minutes=2)
+                cancel_battery_keepalive = async_track_time_interval(
+                    hass, coordinator.async_keepalive, timedelta(minutes=2)
                 )
                 hass.data[DOMAIN][entry.entry_id]["timed_tasks"].append(
-                    cancel_es_keepalive
+                    cancel_battery_keepalive
                 )
+
+                # Keep-alive pour l'EnergySwitch (via REST)
+                if coordinator.es_serial:
+                    _LOGGER.info(
+                        "Activation du keep-alive REST (EnergySwitch) toutes les 2 minutes."
+                    )
+                    cancel_es_keepalive = async_track_time_interval(
+                        hass, coordinator.async_keepalive_es, timedelta(minutes=2)
+                    )
+                    hass.data[DOMAIN][entry.entry_id]["timed_tasks"].append(
+                        cancel_es_keepalive
+                    )
 
     # --- DÉMARRAGE DES TÂCHES ---
     if hass.state == CoreState.running:
