@@ -102,7 +102,49 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         energyswitch_topic = f"brain/{energyswitch_serial}"
         _LOGGER.info("🔌 Topic MQTT energyswitch (online): %s", energyswitch_topic)
 
-    coordinator = await get_beem_coordinator(hass, entry, token_rest, email, password)
+    # Détection d'éventuelles maisons multiples : préférer l'endpoint paginated si disponible,
+    # sinon tomber en fallback sur les houseId présents sur les appareils.
+    house_ids: set[str] = set()
+
+    try:
+        from .beem_api import get_houses as _get_houses
+
+        houses_list = await _get_houses(token_rest)
+        for h in houses_list or []:
+            hid = h.get("id") or h.get("houseId")
+            if hid:
+                house_ids.add(str(hid))
+    except Exception:
+        # ignore et fallback
+        pass
+
+    # Fallback : collecter houseId depuis les devices retournés par /devices
+    if not house_ids and devices_payload:
+        for bat in batteries:
+            hid = bat.get("houseId") or bat.get("house_id")
+            if hid:
+                house_ids.add(str(hid))
+        for box in devices_payload.get("beemboxes", []) or []:
+            hid = box.get("houseId") or box.get("house_id")
+            if hid:
+                house_ids.add(str(hid))
+
+    if len(house_ids) <= 1:
+        # Comportement inchangé pour 0 ou 1 maison
+        coordinator = await get_beem_coordinator(hass, entry, token_rest, email, password)
+        stored_coordinator = coordinator
+        coordinators_map = None
+    else:
+        # Crée un coordinator par maison. Ne pas agréger — conserver le premier en 'coordinator' pour compatibilité.
+        coordinators_map: dict[str, object] = {}
+        for hid in sorted(house_ids):
+            c = await get_beem_coordinator(
+                hass, entry, token_rest, email, password, house_id=hid
+            )
+            coordinators_map[hid] = c
+        # Garder le premier coordinator comme valeur 'coordinator' pour compatibilité descendante
+        first_hid = sorted(house_ids)[0]
+        stored_coordinator = coordinators_map[first_hid]
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "mqtt_client": mqtt_client,
@@ -112,7 +154,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "batteries": batteries,
         "energyswitch_topic": energyswitch_topic,
         "energyswitch_serial": energyswitch_serial,
-        "coordinator": coordinator,
+        "coordinator": stored_coordinator,
+        "coordinators": coordinators_map,
         "mqtt_task": None,
     }
 
@@ -155,6 +198,33 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     _LOGGER.warning(
                         "Erreur lors de la fermeture du client MQTT : %s", e
                     )
+
+            # Cancel periodic tasks (timers) to avoid leaks after reload/unload
+            timed_tasks = entry_data.get("timed_tasks", [])
+            if timed_tasks:
+                _LOGGER.info("Annulation de %d tâches périodiques (timers).", len(timed_tasks))
+                for cancel_task in list(timed_tasks):
+                    try:
+                        # cancel_task is the unsubscribe/cancel callable returned by async_track_time_interval
+                        cancel_task()
+                    except Exception as e:
+                        _LOGGER.debug("Erreur lors de l'annulation d'une tâche périodique: %s", e)
+
+            # Cancel the beem cloud listener task if present
+            beem_task = entry_data.get("beem_cloud_task_battery")
+            if beem_task:
+                try:
+                    if hasattr(beem_task, "cancel"):
+                        beem_task.cancel()
+                        # Await it briefly to allow cancellation to propagate
+                        try:
+                            await beem_task
+                        except asyncio.CancelledError:
+                            _LOGGER.debug("beem_cloud_task_battery annulé avec succès")
+                        except Exception as e:
+                            _LOGGER.debug("Erreur lors de l'attente d'annulation de beem_task: %s", e)
+                except Exception as e:
+                    _LOGGER.debug("Erreur lors de l'annulation du beem_cloud_task_battery: %s", e)
 
             hass.data[DOMAIN].pop(entry.entry_id, None)
             _LOGGER.info(
