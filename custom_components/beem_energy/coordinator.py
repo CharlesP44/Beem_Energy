@@ -460,7 +460,7 @@ class BeemCoordinator(DataUpdateCoordinator):
 
         client_id = self._stream_client_id
         headers = {
-            "Authorization": f"******",
+            "Authorization": f"Bearer {self.token_rest}",
             "Accept": "application/json",
         }
         data_stream_url = f"{BASE_URL}/batteries/{battery_id}/data-stream"
@@ -519,7 +519,7 @@ class BeemCoordinator(DataUpdateCoordinator):
 
         url = f"{BASE_URL}/energy-switches/{self.es_id}/data-stream"
         headers = {
-            "Authorization": f"******",
+            "Authorization": f"Bearer {self.token_rest}",
             "Accept": "application/json",
         }
         client_id = self._stream_client_id
