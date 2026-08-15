@@ -380,54 +380,6 @@ class BeemCoordinator(DataUpdateCoordinator):
         _LOGGER.debug(
             "[STREAMING] Demande de maintien du flux pour le serial %s", serial
         )
-        if not self.token_rest or not serial:
-            return False
-
-        battery_data = self.batteries_by_serial.get(serial.upper())
-        if not battery_data or not battery_data.get("id"):
-            _LOGGER.warning(
-                "[STREAMING] Impossible de trouver l'ID pour le serial %s", serial
-            )
-            return False
-
-        battery_id = battery_data["id"]
-
-        client_id = self._stream_client_id
-        headers = {
-            "Authorization": f"Bearer {self.token_rest}",
-            "Accept": "application/json",
-        }
-        data_stream_url = f"{BASE_URL}/batteries/{battery_id}/data-stream"
-        params = {"clientId": client_id}
-
-        try:
-            async with aiohttp.ClientSession(headers=headers) as session:
-                async with session.post(data_stream_url, params=params) as resp:
-                    if resp.status in (200, 201):
-                        _LOGGER.debug(
-                            "[STREAMING] Maintien du flux OK pour %s (status %d)",
-                            serial,
-                            resp.status,
-                        )
-                        return True
-                    else:
-                        _LOGGER.warning(
-                            "[STREAMING] Échec du maintien du flux pour %s (status %d)",
-                            serial,
-                            resp.status,
-                        )
-                        return False
-        except Exception as e:
-            _LOGGER.error(
-                "[STREAMING] Erreur lors du maintien du flux pour %s: %s", serial, e
-            )
-            return False
-
-    async def async_ensure_streaming(self, serial: str) -> bool:
-        """S'assure que le flux de données MQTT est actif pour une batterie spécifique."""
-        _LOGGER.debug(
-            "[STREAMING] Demande de maintien du flux pour le serial %s", serial
-        )
         
         # Get or create backoff state for this serial
         if serial not in self._backoff_streaming_by_serial:
