@@ -12,7 +12,9 @@ import pandas as pd
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, valid_entity_id
 from homeassistant.helpers import config_validation as cv
+from homeassistant.components.recorder.models import StatisticMeanType
 from homeassistant.components.recorder.statistics import (
+    STATISTIC_UNIT_TO_UNIT_CONVERTER,
     async_add_external_statistics,
     async_import_statistics,
     valid_statistic_id,
@@ -146,15 +148,20 @@ def _handle_dataframe(
             continue
         if statistic_id not in stats:
             source = _get_source(statistic_id)
+            unit = _add_unit_to_dataframe(
+                source, unit_from_where, row.get("unit", ""), statistic_id
+            )
+            # Home Assistant 2026.11 requires mean_type and unit_class; derive
+            # the unit class from the unit, like Home Assistant used to do.
+            converter = STATISTIC_UNIT_TO_UNIT_CONVERTER.get(unit)
             metadata = {
-                "has_mean": False,
+                "mean_type": StatisticMeanType.NONE,
                 "has_sum": has_sum,
                 "source": source,
                 "statistic_id": statistic_id,
                 "name": None,
-                "unit_of_measurement": _add_unit_to_dataframe(
-                    source, unit_from_where, row.get("unit", ""), statistic_id
-                ),
+                "unit_class": converter.UNIT_CLASS if converter else None,
+                "unit_of_measurement": unit,
             }
             stats[statistic_id] = (metadata, [])
         if has_sum:
