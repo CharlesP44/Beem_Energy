@@ -1,7 +1,7 @@
 {
   "name": "Beem_Energy",
   "content_in_root": false,
-  "homeassistant": "2024.4.0",
+  "homeassistant": "2025.11.0",
   "render_readme": true,
   "country": "FR"
 }
