@@ -483,3 +483,53 @@ async def set_battery_control_parameters(
                 return True
     except aiohttp.ClientError as e:
         raise BeemConnectionError(f"Erreur réseau Beem (set_parameters): {e}") from e
+
+
+async def set_battery_led_brightness(
+    token_rest: str, battery_id: int, brightness: str
+) -> bool:
+    """Modifie la luminosité des LED de la batterie ('default' ou 'low').
+
+    PATCH /batteries/{id} avec {"ledBrightness": ...} (même endpoint que l'app Beem).
+    L'API répond 200 avec {} après ~3 s, ou 424 si la batterie ne répond pas.
+    """
+    url = f"{BASE_URL}/batteries/{battery_id}"
+    payload = {"ledBrightness": brightness}
+
+    _LOGGER.debug(
+        "Modification de la luminosité LED de la batterie %s -> %s",
+        battery_id,
+        brightness,
+    )
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            headers = {
+                "Authorization": f"Bearer {token_rest}",
+                "Content-Type": "application/json; charset=UTF-8",
+                "Accept": "application/json",
+            }
+            async with session.patch(url, json=payload, headers=headers) as resp:
+                text = await resp.text()
+                if resp.status == 401:
+                    raise BeemAuthError("Token expiré ou invalide (set_led_brightness)")
+                if resp.status == 424:
+                    raise BeemConnectionError(
+                        "La batterie n'a pas répondu à temps, vérifiez sa connexion Internet."
+                    )
+                if resp.status not in (200, 201, 204):
+                    _LOGGER.error(
+                        "Erreur Beem modification luminosité LED (%s) : %s",
+                        resp.status,
+                        text,
+                    )
+                    raise Exception(f"Erreur Beem : {text}")
+
+                _LOGGER.info(
+                    "Luminosité LED de la batterie %s modifiée : %s",
+                    battery_id,
+                    brightness,
+                )
+                return True
+    except aiohttp.ClientError as e:
+        raise BeemConnectionError(f"Erreur réseau Beem (set_led_brightness): {e}") from e
