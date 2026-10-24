@@ -11,6 +11,13 @@
       },
       "charge_power": {
         "name": "Puissance de charge maximale"
+      },
+      "led_brightness": {
+        "name": "Luminosité des LED",
+        "state": {
+          "default": "Par défaut",
+          "low": "Faible"
+        }
       }
     },
     "switch": {

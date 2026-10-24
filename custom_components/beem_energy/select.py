@@ -4,18 +4,32 @@ import logging
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import BeemCoordinator
-from .beem_api import set_battery_control_parameters
+from .beem_api import set_battery_control_parameters, set_battery_led_brightness
 from .exceptions import BeemAuthError, BeemConnectionError
 
 _LOGGER = logging.getLogger(__name__)
 
 BATTERY_MODES = ["auto", "pause", "advanced"]
+
+LED_BRIGHTNESS_FEATURE = "led_brightness_control"
+LED_BRIGHTNESS_OPTIONS = ["default", "low"]
+
+
+def _battery_supports_led_brightness(battery_data: dict) -> bool:
+    """True si l'API déclare la fonctionnalité de contrôle de luminosité LED."""
+    features = battery_data.get("features") or []
+    return any(
+        isinstance(feature, dict) and feature.get("name") == LED_BRIGHTNESS_FEATURE
+        for feature in features
+    )
 
 
 async def async_setup_entry(
@@ -38,6 +52,19 @@ async def async_setup_entry(
             entities.append(BeemBatteryModeSelect(coordinator, serial, battery_id))
 
             entities.append(BeemChargePowerSelect(coordinator, serial, battery_id))
+
+            # La luminosité LED n'existe que sur certaines batteries/firmwares :
+            # l'entité n'est créée que si l'API annonce la fonctionnalité.
+            if _battery_supports_led_brightness(battery_data):
+                entities.append(
+                    BeemLedBrightnessSelect(coordinator, serial, battery_id)
+                )
+            else:
+                _LOGGER.debug(
+                    "Batterie %s : fonctionnalité '%s' absente, select LED non créé.",
+                    serial,
+                    LED_BRIGHTNESS_FEATURE,
+                )
 
     async_add_entities(entities)
 
@@ -164,3 +191,75 @@ class BeemChargePowerSelect(CoordinatorEntity[BeemCoordinator], SelectEntity):
             await self.coordinator.async_request_refresh()
         except Exception as e:
             _LOGGER.error("Erreur lors du changement de la puissance de charge : %s", e)
+
+
+class BeemLedBrightnessSelect(CoordinatorEntity[BeemCoordinator], SelectEntity):
+    """Luminosité des LED de la batterie (default / low).
+
+    Créée uniquement pour les batteries exposant la feature 'led_brightness_control'.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "led_brightness"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:led-on"
+    _attr_options = LED_BRIGHTNESS_OPTIONS
+
+    def __init__(self, coordinator: BeemCoordinator, serial: str, battery_id: int):
+        super().__init__(coordinator)
+        self._serial = serial.lower()
+        self._battery_id = battery_id
+        self._attr_unique_id = f"beem_{self._serial}_led_brightness"
+
+    @property
+    def _battery_data(self) -> dict | None:
+        return self.coordinator.data.get("batteries_by_serial", {}).get(
+            self._serial.upper()
+        )
+
+    @property
+    def available(self) -> bool:
+        """Disponible si le coordinateur répond et si la feature est toujours annoncée."""
+        data = self._battery_data
+        return (
+            super().available
+            and data is not None
+            and _battery_supports_led_brightness(data)
+        )
+
+    @property
+    def current_option(self) -> str | None:
+        if not self._battery_data:
+            return None
+        value = str(self._battery_data.get("ledBrightness") or "").lower()
+        return value if value in self.options else None
+
+    @property
+    def device_info(self):
+        return {"identifiers": {(DOMAIN, self._serial)}}
+
+    async def async_select_option(self, option: str) -> None:
+        """Envoie la nouvelle luminosité (l'API met ~3 s à répondre)."""
+        _LOGGER.info(
+            "Demande de changement de luminosité LED pour la batterie %s vers '%s'",
+            self._serial,
+            option,
+        )
+        try:
+            await set_battery_led_brightness(
+                self.coordinator.token_rest, self._battery_id, option
+            )
+        except (BeemAuthError, BeemConnectionError) as e:
+            raise HomeAssistantError(
+                f"Impossible de changer la luminosité LED : {e}"
+            ) from e
+        except Exception as e:
+            raise HomeAssistantError(
+                f"Erreur lors du changement de la luminosité LED : {e}"
+            ) from e
+
+        # Mise à jour optimiste, puis rafraîchissement réel depuis l'API.
+        if self._battery_data is not None:
+            self._battery_data["ledBrightness"] = option
+            self.async_write_ha_state()
+        await self.coordinator.async_request_refresh()
