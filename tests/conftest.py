@@ -2,9 +2,9 @@ import pytest
 from unittest.mock import patch, AsyncMock
 
 from homeassistant.core import HomeAssistant
-from homeassistant.const import ConfigEntryState
+from homeassistant.config_entries import ConfigEntryState
 
-from tests.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.beem_energy.const import DOMAIN
 
