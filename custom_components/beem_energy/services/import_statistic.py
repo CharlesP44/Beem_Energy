@@ -12,6 +12,7 @@ import pandas as pd
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, valid_entity_id
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.components.recorder.models import StatisticMeanType
 from homeassistant.components.recorder.statistics import (
     STATISTIC_UNIT_TO_UNIT_CONVERTER,
@@ -221,7 +222,14 @@ async def _internal_import_file(hass: HomeAssistant, filename: str):
         if not filename:
             _handle_error("Filename cannot be empty.")
             return
-        file_path = f"{hass.config.config_dir}/{filename}"
+        # Only files inside /config: "../" or an absolute path must not let a
+        # service call read any file of the host into the statistics
+        config_dir = Path(hass.config.config_dir).resolve()
+        file_path = str((config_dir / filename).resolve())
+        if not Path(file_path).is_relative_to(config_dir):
+            raise ValueError(
+                f"The file must be inside the configuration folder: {filename}"
+            )
         stats, unit_from_entity = await hass.async_add_executor_job(
             _prepare_data_to_import, file_path
         )
@@ -312,15 +320,19 @@ async def async_import_ha_statistics_files(
 
 
 def async_register_import_services(hass: HomeAssistant):
-    """Registers the import services."""
-    hass.services.async_register(
+    """Registers the import services.
+
+    They overwrite long-term statistics: administrators only.
+    """
+    async_register_admin_service(
+        hass,
         DOMAIN,
         SERVICE_IMPORT_STATISTIC,
         partial(async_service_import_statistic, hass),
         schema=IMPORT_SCHEMA,
     )
-    hass.services.async_register(
-        DOMAIN, SERVICE_IMPORT_HA_FILES, partial(async_import_ha_statistics_files, hass)
+    async_register_admin_service(
+        hass, DOMAIN, SERVICE_IMPORT_HA_FILES, partial(async_import_ha_statistics_files, hass)
     )
 
 

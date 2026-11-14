@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 import logging
 import os
+import secrets
 import csv
 import aiohttp
 import asyncio
@@ -55,6 +56,24 @@ def _build_api_urls(battery_id: int | None) -> dict:
     return urls
 
 
+def _export_filename(prefix: str, start_date, end_date) -> str:
+    """Nom d'un fichier exporté, avec une partie aléatoire.
+
+    Le dossier www est servi sans authentification sous /local/ : un nom
+    prévisible (dates, adresse e-mail du compte) permettrait à n'importe qui
+    de télécharger l'historique de consommation.
+    """
+    return f"{prefix}_{start_date}_to_{end_date}_{secrets.token_urlsafe(16)}.csv"
+
+
+def _exported_message(title: str, exported: list[str]) -> str:
+    """Message de fin d'export, avec le lien de chaque fichier."""
+    if not exported:
+        return f"{title} Aucune donnée à exporter."
+    links = "\n".join(f"- [{name}](/local/beem_exports/{name})" for name in exported)
+    return f"{title}\n\n{links}"
+
+
 def _write_csv_sync(file_path: str, all_rows: list[dict], fieldnames: list[str]):
     _LOGGER.debug("Écriture de %d lignes dans %s", len(all_rows), file_path)
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -68,6 +87,7 @@ def _write_csv_sync(file_path: str, all_rows: list[dict], fieldnames: list[str])
 async def async_export_to_csv(service_call: ServiceCall):
     """Service pour exporter les données historiques en CSV standard."""
     hass = service_call.hass
+    exported: list[str] = []
     start_date = service_call.data["start_date"]
     end_date = service_call.data["end_date"]
 
@@ -172,12 +192,9 @@ async def async_export_to_csv(service_call: ServiceCall):
                     await asyncio.sleep(API_DELAY)
 
                 if all_rows:
-                    entry_title = (
-                        hass.config_entries.async_get_entry(entry_id)
-                        .title.replace(" ", "_")
-                        .lower()
+                    filename = _export_filename(
+                        f"{api_name}_export", start_date, end_date
                     )
-                    filename = f"{api_name}_export_{entry_title}_{start_date}_to_{end_date}.csv"
                     file_path = os.path.join(CSV_DIR, filename)
 
                     fieldnames = [
@@ -196,19 +213,24 @@ async def async_export_to_csv(service_call: ServiceCall):
                     _LOGGER.info(
                         f"✅ Fichier exporté : /local/beem_exports/{filename} ({len(all_rows)} lignes)"
                     )
+                    exported.append(filename)
                 else:
                     _LOGGER.info(f"Aucune donnée à exporter pour {api_name}")
 
     await hass.services.async_call(
         "persistent_notification",
         "create",
-        {"title": "Beem Energy Export", "message": "Exportation CSV terminée."},
+        {
+            "title": "Beem Energy Export",
+            "message": _exported_message("Exportation CSV terminée.", exported),
+        },
     )
 
 
 async def async_export_for_import(service_call: ServiceCall):
     """Service pour exporter les données dans un format cumulatif générique."""
     hass = service_call.hass
+    exported: list[str] = []
     start_date, end_date = (
         service_call.data["start_date"],
         service_call.data["end_date"],
@@ -342,7 +364,9 @@ async def async_export_for_import(service_call: ServiceCall):
                         }
                     )
 
-                filename = f"{api_name}_import_format_{entry_title}_{start_date}_to_{end_date}.csv"
+                filename = _export_filename(
+                    f"{api_name}_import_format", start_date, end_date
+                )
                 file_path = os.path.join(CSV_DIR, filename)
                 await hass.async_add_executor_job(
                     _write_csv_sync,
@@ -353,13 +377,16 @@ async def async_export_for_import(service_call: ServiceCall):
                 _LOGGER.info(
                     f"✅ Fichier (format import) exporté : /local/beem_exports/{filename}"
                 )
+                exported.append(filename)
 
     await hass.services.async_call(
         "persistent_notification",
         "create",
         {
             "title": "Beem Energy Export",
-            "message": "Exportation (format import) terminée.",
+            "message": _exported_message(
+                "Exportation (format import) terminée.", exported
+            ),
         },
     )
 
@@ -367,6 +394,7 @@ async def async_export_for_import(service_call: ServiceCall):
 async def async_export_for_ha_import(service_call: ServiceCall):
     """Exporte les données en utilisant les entity_id des capteurs existants."""
     hass = service_call.hass
+    exported: list[str] = []
     start_date, end_date = (
         service_call.data["start_date"],
         service_call.data["end_date"],
@@ -528,7 +556,11 @@ async def async_export_for_ha_import(service_call: ServiceCall):
                         }
                     )
 
-                filename = f"{statistic_id.replace('sensor.', '')}_import_ha_{start_date}_to_{end_date}.csv"
+                filename = _export_filename(
+                    f"{statistic_id.replace('sensor.', '')}_import_ha",
+                    start_date,
+                    end_date,
+                )
                 file_path = os.path.join(CSV_DIR, filename)
                 await hass.async_add_executor_job(
                     _write_csv_sync,
@@ -539,11 +571,15 @@ async def async_export_for_ha_import(service_call: ServiceCall):
                 _LOGGER.info(
                     f"✅ Fichier (format HA) exporté : /local/beem_exports/{filename}"
                 )
+                exported.append(filename)
 
     await hass.services.async_call(
         "persistent_notification",
         "create",
-        {"title": "Beem Energy Export", "message": "Exportation (format HA) terminée."},
+        {
+            "title": "Beem Energy Export",
+            "message": _exported_message("Exportation (format HA) terminée.", exported),
+        },
     )
 
 
