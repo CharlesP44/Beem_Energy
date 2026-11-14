@@ -12,9 +12,9 @@ from aiomqtt import Client, ProtocolVersion
 from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN, PLATFORMS
-from .beem_api import get_tokens, get_devices
+from .beem_api import expire_rest_token, get_tokens, get_devices
 from .coordinator import get_beem_coordinator, async_remove_beem_coordinator
-from .exceptions import BeemConnectionError
+from .exceptions import BeemAuthError, BeemConnectionError
 from . import services
 
 CONFIG_SCHEMA = cv.empty_config_schema("beem_energy")
@@ -53,6 +53,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         energyswitch_serial = (
             energyswitches[0].get("serialNumber") if energyswitches else None
         )
+    except BeemAuthError as err:
+        # Token refusé avant sa date d'expiration locale : le prochain essai
+        # en demande un nouveau au lieu de réutiliser celui-ci.
+        expire_rest_token(hass, entry)
+        raise ConfigEntryNotReady(f"Token Beem refusé: {err}") from err
     except Exception as err:
         raise ConfigEntryNotReady(f"Beem devices indisponibles: {err}") from err
 

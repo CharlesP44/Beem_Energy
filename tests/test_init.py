@@ -2,7 +2,7 @@ from unittest.mock import patch, AsyncMock
 import pytest
 
 from homeassistant.core import HomeAssistant
-from homeassistant.const import ConfigEntryState
+from homeassistant.config_entries import ConfigEntryState
 
 from custom_components.beem_energy.exceptions import BeemConnectionError
 

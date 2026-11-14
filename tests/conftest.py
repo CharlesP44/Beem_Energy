@@ -2,9 +2,9 @@ import pytest
 from unittest.mock import patch, AsyncMock
 
 from homeassistant.core import HomeAssistant
-from homeassistant.const import ConfigEntryState
+from homeassistant.config_entries import ConfigEntryState
 
-from tests.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.beem_energy.const import DOMAIN
 
@@ -56,6 +56,9 @@ def mock_beem_api():
             "access_token": "fake_token", "user_id": "123", "client_id": "fake_client",
             "mqtt_token": "fake_mqtt_token", "mqtt_server": "fake_server", "mqtt_port": 8883,
         }),
+    ), patch(
+        "custom_components.beem_energy.get_devices",
+        new=AsyncMock(return_value={"batteries": [{"serialNumber": "B123", "id": 42}]}),
     ), patch(
         "custom_components.beem_energy.BeemCoordinator._fetch_data_with_token",
         return_value=mock_coordinator_data,

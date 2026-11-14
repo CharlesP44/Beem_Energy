@@ -1,5 +1,6 @@
 # Copyright (c) 2025 CharlesP44
 # SPDX-License-Identifier: MIT
+import asyncio
 import aiohttp
 import time
 import logging
@@ -299,7 +300,12 @@ async def get_box_summary(token_rest: str) -> list:
 
 
 async def get_devices(token_rest: str) -> dict:
-    """Retourne le payload complet de l'endpoint /devices. Propage les erreurs temporaires."""
+    """Retourne le payload complet de l'endpoint /devices.
+
+    Lève BeemAuthError sur un 401 (token à renouveler) et BeemConnectionError
+    sur toute autre erreur : un payload vide passerait pour un compte sans
+    équipement.
+    """
     url = f"{BASE_URL}/devices"
     try:
         async with aiohttp.ClientSession() as session:
@@ -318,17 +324,15 @@ async def get_devices(token_rest: str) -> dict:
                 if resp.status >= 500:
                     raise BeemConnectionError("Serveur Beem indisponible (/devices)")
                 if resp.status not in (200, 201):
-                    _LOGGER.error(
-                        "Erreur récupération devices Beem (%s) : %s", resp.status, text
+                    raise BeemConnectionError(
+                        f"Erreur Beem sur /devices ({resp.status}) : {text}"
                     )
-                    raise Exception("Erreur Beem : " + text)
 
                 return await resp.json()
-    except BeemConnectionError:
+    except (BeemAuthError, BeemConnectionError):
         raise
-    except Exception as e:
-        _LOGGER.error("Erreur récupération devices Beem: %s", e)
-        return {}
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as e:
+        raise BeemConnectionError(f"Erreur réseau Beem (/devices) : {e}") from e
 
 
 async def get_battery_data(token_rest: str, battery_serial: str | None = None):
@@ -386,6 +390,17 @@ async def get_battery_live(token_rest: str, battery_serial: str):
     except Exception as e:
         _LOGGER.error("Erreur REST battery live: %s", e)
     return None
+
+
+def expire_rest_token(hass, config_entry: ConfigEntry) -> None:
+    """Marque le token REST comme expiré : le prochain get_tokens en demande un nouveau.
+
+    À appeler quand l'API répond 401 alors que le token n'a pas encore atteint
+    sa date d'expiration locale, sans quoi get_tokens rendrait le même token.
+    """
+    data = dict(config_entry.data)
+    data["rest_expires_at"] = 0
+    hass.config_entries.async_update_entry(config_entry, data=data)
 
 
 async def invalidate_tokens(hass, config_entry: ConfigEntry, email: str) -> None:
