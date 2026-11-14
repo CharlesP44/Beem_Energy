@@ -19,6 +19,7 @@ from .beem_api import (
     get_battery_live_data,
     get_box_summary,
     get_battery_control_parameters,
+    expire_rest_token,
 )
 
 
@@ -78,6 +79,9 @@ class BeemCoordinator(DataUpdateCoordinator):
                 "Token REST expiré pour %s. Tentative de rafraîchissement.", self.email
             )
             try:
+                # L'API a refusé le token avant sa date d'expiration locale :
+                # sans cela, get_tokens rendrait le même token.
+                expire_rest_token(self.hass, self.config_entry)
                 new_tokens = await get_tokens(
                     self.hass, self.config_entry, self.email, self.password
                 )
@@ -129,6 +133,8 @@ class BeemCoordinator(DataUpdateCoordinator):
             solar_equipments_list = []
             main_battery_serial = None
             main_battery = {}
+            batteries = []
+            energyswitch_serial = None
 
             if box_summary_data:
                 self.beemboxes_summary_by_id = {
@@ -231,6 +237,10 @@ class BeemCoordinator(DataUpdateCoordinator):
             )
             return self.data
 
+        except (BeemAuthError, BeemConnectionError):
+            # Erreurs attendues (token expiré, API injoignable) : le coordinateur
+            # les journalise une fois, sans trace à chaque rafraîchissement.
+            raise
         except Exception as err:
             _LOGGER.error(
                 "Erreur critique inattendue dans _fetch_data_with_token: %s",

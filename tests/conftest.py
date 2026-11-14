@@ -57,6 +57,9 @@ def mock_beem_api():
             "mqtt_token": "fake_mqtt_token", "mqtt_server": "fake_server", "mqtt_port": 8883,
         }),
     ), patch(
+        "custom_components.beem_energy.get_devices",
+        new=AsyncMock(return_value={"batteries": [{"serialNumber": "B123", "id": 42}]}),
+    ), patch(
         "custom_components.beem_energy.BeemCoordinator._fetch_data_with_token",
         return_value=mock_coordinator_data,
     ), patch(
