@@ -2,10 +2,39 @@
 # SPDX-License-Identifier: MIT
 from typing import Any, Dict
 
+from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 
 from .const import DOMAIN
+
+# Diagnostics end up attached to public issues: nothing that identifies the
+# account, the home or its devices
+TO_REDACT = {
+    "email",
+    "user_id",
+    "userId",
+    "client_id",
+    "clientId",
+    "energyswitch_topic",
+    "serial",
+    "serialNumber",
+    "main_battery_serial",
+    "energyswitch_serial",
+    "id",
+    "macAddress",
+    "mac",
+    "ip",
+    "ipAddress",
+    "address",
+    "latitude",
+    "longitude",
+    "unique_id",
+    "token",
+    "access_token",
+    "accessToken",
+    "mqtt_token",
+}
 
 
 async def async_get_config_entry_diagnostics(
@@ -124,4 +153,9 @@ async def async_get_config_entry_diagnostics(
     if not getattr(coordinator, "last_update_success", True):
         diagnostics["integration_status"] = "REST unavailable"
 
-    return diagnostics
+    # Keyed by serial: replace the keys too
+    diagnostics["devices"] = {
+        f"device_{index}": device
+        for index, device in enumerate(diagnostics["devices"].values(), start=1)
+    }
+    return async_redact_data(diagnostics, TO_REDACT)
